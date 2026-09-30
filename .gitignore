@@ -1,0 +1,31 @@
+artifacts/
+bin/
+obj/
+__pycache__/
+*.pyc
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local machine configuration and credentials.
+*.local.props
+.env
+.env.*
+!.env.example
+
+# Runtime overlay text produced by the in-game plugin.
+overlay-status.txt
+overlay-status.txt.tmp
+overlay-input.txt
+
+# Optional JSONL recordings from the plugin (offline QA only).
+recordings/
+
+# Local debug session logs.
+debug-*.log
+
+# Cursor local state.
+.cursorignore

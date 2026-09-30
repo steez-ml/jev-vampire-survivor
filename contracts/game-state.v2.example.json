@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "seq": 42,
+  "t_ms": 1726700000123,
+  "source": "bepinex",
+  "run": {
+    "running": true,
+    "paused": false,
+    "level_up": false,
+    "survived_seconds": 18.5
+  },
+  "player": {
+    "x": 12.25,
+    "y": -4.5,
+    "hp": 88,
+    "hp_max": 100,
+    "speed": 1.2,
+    "radius": 0.4
+  },
+  "bounds": {
+    "x": -100,
+    "y": -80,
+    "w": 200,
+    "h": 160
+  },
+  "enemies": [
+    {
+      "x": 14.0,
+      "y": -3.0,
+      "vx": -0.2,
+      "vy": 0.1
+    }
+  ],
+  "gems": [
+    {
+      "x": 10.0,
+      "y": -6.0
+    }
+  ],
+  "chests": [
+    {
+      "x": 30.0,
+      "y": 8.0
+    }
+  ],
+  "counts": {
+    "enemies_stage": 40,
+    "enemies_published": 1,
+    "gems_stage": 9,
+    "gems_published": 1,
+    "chests_stage": 1,
+    "chests_published": 1
+  },
+  "perf": {
+    "probe_us": 140
+  }
+}

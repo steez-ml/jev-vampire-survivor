@@ -1,0 +1,96 @@
+{
+  "schema_version": 4,
+  "seq": 42,
+  "t_ms": 1726700000123,
+  "source": "bepinex",
+  "run": {
+    "running": true,
+    "paused": false,
+    "level_up": false,
+    "survived_seconds": 18.5
+  },
+  "player": {
+    "x": 12.25,
+    "y": -4.5,
+    "hp": 88,
+    "hp_max": 100,
+    "speed": 1.2,
+    "radius": 0.4,
+    "level": 3,
+    "xp": 14,
+    "xp_next": 20,
+    "magnet": 2.6,
+    "facing_x": 1,
+    "move_dir": [1, 0],
+    "blocked": ["up"],
+    "weapons": [
+      { "type": "WHIP", "level": 2, "evo": false },
+      { "type": "MAGIC_MISSILE", "level": 1, "evo": false }
+    ]
+  },
+  "bounds": {
+    "x": -100,
+    "y": -80,
+    "w": 200,
+    "h": 160
+  },
+  "polar": {
+    "rings": 3,
+    "sectors": 8,
+    "radii": [6, 16, 40],
+    "enemy": [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0],
+    "xp": [0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0],
+    "wall": [1, 0.5, 0, 0, 0, 0, 0, 0.5, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1]
+  },
+  "enemies": [
+    {
+      "x": 12.25,
+      "y": -1.5,
+      "vx": 0,
+      "vy": -0.4
+    }
+  ],
+  "bosses": [
+    {
+      "x": 30,
+      "y": 8
+    }
+  ],
+  "chests": [
+    {
+      "x": 40,
+      "y": -4
+    }
+  ],
+  "pickups": [
+    {
+      "type": "ROAST",
+      "x": 18,
+      "y": -2
+    }
+  ],
+  "destructibles": [
+    {
+      "type": "BRAZIER",
+      "x": 8,
+      "y": 6
+    }
+  ],
+  "counts": {
+    "enemies_stage": 40,
+    "enemies_published": 1,
+    "gems_stage": 9,
+    "gems_published": 9,
+    "chests_stage": 1,
+    "chests_published": 1,
+    "bosses_published": 1,
+    "tilemaps": 2,
+    "pickups_stage": 1,
+    "pickups_published": 1,
+    "destructibles_stage": 3,
+    "destructibles_published": 1
+  },
+  "perf": {
+    "probe_us": 140
+  }
+}

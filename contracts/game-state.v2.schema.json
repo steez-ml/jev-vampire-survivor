@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:vampire-survivors-jev:game-state:v2",
+  "title": "Vampire Survivors Jev game state v2",
+  "description": "Live UDP snapshot from the BepInEx plugin. k-nearest geometry only; source is always bepinex.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "seq",
+    "t_ms",
+    "source",
+    "run",
+    "enemies",
+    "gems",
+    "chests",
+    "counts",
+    "perf"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "t_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "const": "bepinex"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["running", "paused", "level_up", "survived_seconds"],
+      "properties": {
+        "running": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "level_up": {
+          "type": "boolean"
+        },
+        "survived_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "hp", "hp_max"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "hp": {
+          "type": "number"
+        },
+        "hp_max": {
+          "type": "number"
+        },
+        "speed": {
+          "type": "number"
+        },
+        "radius": {
+          "type": "number"
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        }
+      }
+    },
+    "enemies": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y"],
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "vx": {
+            "type": "number"
+          },
+          "vy": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "gems": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/xy"
+      }
+    },
+    "chests": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/xy"
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enemies_stage",
+        "enemies_published",
+        "gems_stage",
+        "gems_published",
+        "chests_stage",
+        "chests_published"
+      ],
+      "properties": {
+        "enemies_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "enemies_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gems_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gems_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chests_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chests_published": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "perf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["probe_us"],
+      "properties": {
+        "probe_us": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "xy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

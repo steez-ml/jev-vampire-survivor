@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:vampire-survivors-jev:game-state:v1",
+  "title": "Vampire Survivors Jev game state v1",
+  "description": "The initial normalized telemetry contract. It is deliberately smaller than the eventual gameplay state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "captured_at_utc",
+    "source",
+    "scene",
+    "time_seconds"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "captured_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "const": "melonloader"
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build_index", "name"],
+      "properties": {
+        "build_index": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "time_seconds": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

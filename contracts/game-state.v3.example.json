@@ -1,0 +1,65 @@
+{
+  "schema_version": 3,
+  "seq": 42,
+  "t_ms": 1726700000123,
+  "source": "bepinex",
+  "run": {
+    "running": true,
+    "paused": false,
+    "level_up": false,
+    "survived_seconds": 18.5
+  },
+  "player": {
+    "x": 12.25,
+    "y": -4.5,
+    "hp": 88,
+    "hp_max": 100,
+    "speed": 1.2,
+    "radius": 0.4
+  },
+  "bounds": {
+    "x": -100,
+    "y": -80,
+    "w": 200,
+    "h": 160
+  },
+  "polar": {
+    "rings": 3,
+    "sectors": 8,
+    "radii": [6, 16, 40],
+    "enemy": [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0],
+    "xp": [0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0]
+  },
+  "enemies": [
+    {
+      "x": 12.25,
+      "y": -1.5,
+      "vx": 0,
+      "vy": -0.4
+    }
+  ],
+  "bosses": [
+    {
+      "x": 30,
+      "y": 8
+    }
+  ],
+  "chests": [
+    {
+      "x": 40,
+      "y": -4
+    }
+  ],
+  "counts": {
+    "enemies_stage": 40,
+    "enemies_published": 1,
+    "gems_stage": 9,
+    "gems_published": 9,
+    "chests_stage": 1,
+    "chests_published": 1,
+    "bosses_published": 1
+  },
+  "perf": {
+    "probe_us": 140
+  }
+}
