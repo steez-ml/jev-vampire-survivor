@@ -31,7 +31,20 @@ from vampirejev.snapshot import (
     WeaponState,
     XpPile,
 )
-from vampirejev.sim import SimEnemy, SimGem, clear_xp, garlic_swarm, horde_gem, low_brazier, low_chicken, open_gem, pile, run_mind, whip_line
+from vampirejev.sim import (
+    SimEnemy,
+    SimGem,
+    clear_xp,
+    forest_line,
+    garlic_swarm,
+    horde_gem,
+    low_brazier,
+    low_chicken,
+    open_gem,
+    pile,
+    run_mind,
+    whip_line,
+)
 from vampirejev.wasd import heading_to_keys
 from vampirejev.words import has_raw_measurement
 
@@ -71,6 +84,32 @@ class PerceptionTests(unittest.TestCase):
     def test_one_type_is_not_called_frail(self) -> None:
         bands = durability_bands([EnemyStats("BAT", 8, 1)])
         self.assertEqual(bands["BAT"], STURDY)
+
+    def test_a_typed_frail_enemy_with_no_catalog_is_killable(self) -> None:
+        snapshot = _running(
+            _player(),
+            enemies=[Entity(2, 0, 0, 0, "BAT1")],
+        )
+        seen = perceive(snapshot)
+        bat = seen.bodies[0]
+        self.assertEqual(bat.band, "frail")
+        self.assertEqual(bat.outlook, KILLABLE)
+        self.assertFalse(bat.dangerous)
+
+    def test_an_untyped_enemy_stays_unknown(self) -> None:
+        snapshot = _running(_player(), enemies=[Entity(2, 0, 0, 0, "")])
+        seen = perceive(snapshot)
+        self.assertEqual(seen.bodies[0].band, "unknown")
+        self.assertTrue(seen.bodies[0].dangerous)
+
+    def test_the_catalog_overrides_the_table(self) -> None:
+        snapshot = _running(
+            _player(),
+            enemies=[Entity(2, 0, 0, 0, "BAT1")],
+            enemy_catalog=[EnemyStats("BAT1", 400, 1), EnemyStats("OTHER", 8, 1)],
+        )
+        seen = perceive(snapshot)
+        self.assertEqual(seen.bodies[0].band, "tanky")
 
     def test_boss_is_dangerous_and_a_frail_bat_is_not(self) -> None:
         snapshot = _running(
@@ -487,6 +526,20 @@ class ScenarioTests(unittest.TestCase):
         run_mind(world, 3.0)
         self.assertGreater(world.collected, 0)
         self.assertGreater(world.x, 2.0)
+
+    def test_typed_forest_enemies_without_a_catalog(self) -> None:
+        bats = forest_line(False)
+        self.assertEqual(bats.catalog, [])
+        run_mind(bats, 3.5)
+        self.assertGreater(bats.collected, 0)
+
+        mud = forest_line(True)
+        _mind, rows = run_mind(mud, 2.5)
+        self.assertEqual(mud.collected, 0)
+        self.assertFalse(rows[0][6].startswith("gems"))
+        nearest = min(math.hypot(x - 3.0, y) for _t, x, y, *_rest in rows)
+        nearest = min(nearest, math.hypot(mud.x - 3.0, mud.y))
+        self.assertGreater(nearest, 1.0)
 
     def test_whip_walks_through_bats_but_not_a_tank(self) -> None:
         bats = whip_line(False)

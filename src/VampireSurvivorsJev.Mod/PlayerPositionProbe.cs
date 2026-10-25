@@ -19,6 +19,7 @@ internal struct EntitySlot
     public float Vx;
     public float Vy;
     public float Dist2;
+    public string TypeName;
 }
 
 internal struct WeaponSlot
@@ -211,9 +212,14 @@ internal sealed class GameSnapshot
 /// - GameManager.Destructibles (PhysicsGroup : Group) -> children (HashSet PhaserGameObject);
 ///   Destructible : BasePoolableSpriteBehaviour : ArcadeSprite (position), IsUnitDead(), DestructibleType (PropType)
 /// v5 (2026-10-24): xp_piles are clusters of the same GameManager.Gems / Pickup.position / Pickup.Value
-/// read that already fills polar.xp. No new game type. Enemy type, HP, card offers, and weapon area
-/// are still absent: those member names show up in the interop strings, but the owning type was not
-/// confirmed, so this probe does not call them.
+/// read that already fills polar.xp. No new game type.
+/// v5 enemy type (inspected 2026-10-24 with System.Reflection.Metadata on this install's interop):
+/// - EnemyController.EnemyType, public getter, returns VampireSurvivors.Data.EnemyType
+///   (metadata: get_EnemyType_Public_get_EnemyType_0). The snapshot publishes Enum.ToString().
+/// - StageEventId is a public int and is not a per-enemy id, so it is not published.
+/// - EnemyController.Hp (Single) and MaxHp() (Single) were in the same pass and are not read yet.
+/// - EnemyData.maxHp exists on VampireSurvivors.Data.Enemies.EnemyData, reached by CurrentEnemyData.
+///   The numbers live in packed assets, not as constants, so the bridge table does not read them.
 /// Inactive Unity objects are skipped via gameObject.activeInHierarchy.
 /// </summary>
 internal static class PlayerPositionProbe
@@ -234,6 +240,8 @@ internal static class PlayerPositionProbe
     private static bool _blockedProbeBroken;
     private static bool _destructibleProbeBroken;
     private static bool _xpPileBroken;
+    private static bool _enemyTypeProbeBroken;
+    private static readonly Dictionary<int, string> EnemyNames = new();
 
     public static void Fill(GameManager gameManager, GameSnapshot snapshot)
     {
@@ -1075,6 +1083,8 @@ internal static class PlayerPositionProbe
                 {
                 }
 
+                var typeName = ReadEnemyTypeName(enemy);
+
                 if (isBoss)
                 {
                     Consider(
@@ -1085,7 +1095,8 @@ internal static class PlayerPositionProbe
                         p.y,
                         0f,
                         0f,
-                        dist2);
+                        dist2,
+                        typeName);
                 }
 
                 if (dist2 < innerLimit2)
@@ -1099,12 +1110,50 @@ internal static class PlayerPositionProbe
                         p.y,
                         v.x,
                         v.y,
-                        dist2);
+                        dist2,
+                        typeName);
                 }
             }
         }
         catch
         {
+        }
+    }
+
+    /// <summary>
+    /// EnemyController.EnemyType as the enum name. A failure disables only this read.
+    /// Positions, counts, and the polar grid from the same loop stay as they were.
+    /// </summary>
+    private static string ReadEnemyTypeName(EnemyController enemy)
+    {
+        if (_enemyTypeProbeBroken || !SnapshotConfig.ProbeEnemyTypes || enemy == null)
+        {
+            return "";
+        }
+
+        try
+        {
+            var type = enemy.EnemyType;
+            var key = (int)type;
+            if (EnemyNames.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            var name = type.ToString();
+            if (string.IsNullOrEmpty(name))
+            {
+                name = key.ToString(CultureInfo.InvariantCulture);
+            }
+
+            EnemyNames[key] = name;
+            return name;
+        }
+        catch (Exception ex)
+        {
+            _enemyTypeProbeBroken = true;
+            DebugSessionLog.Write("P", "PlayerPositionProbe.cs:ReadEnemyTypeName", "enemy type read failed; probe disabled", Quote(ex));
+            return "";
         }
     }
 
@@ -1395,7 +1444,8 @@ internal static class PlayerPositionProbe
         float y,
         float vx,
         float vy,
-        float dist2)
+        float dist2,
+        string typeName = "")
     {
         var slot = new EntitySlot
         {
@@ -1403,7 +1453,8 @@ internal static class PlayerPositionProbe
             Y = y,
             Vx = vx,
             Vy = vy,
-            Dist2 = dist2
+            Dist2 = dist2,
+            TypeName = typeName ?? ""
         };
 
         if (published < cap)
@@ -1651,6 +1702,13 @@ internal static class SnapshotJson
                 AppendFloat(sb, e.Vx);
                 sb.Append(",\"vy\":");
                 AppendFloat(sb, e.Vy);
+            }
+
+            if (!string.IsNullOrEmpty(e.TypeName))
+            {
+                sb.Append(",\"type\":\"");
+                AppendSafeString(sb, e.TypeName);
+                sb.Append('"');
             }
 
             sb.Append('}');

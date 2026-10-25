@@ -12,6 +12,7 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 
+from .enemy_bands import MAD_FOREST_BANDS
 from .snapshot import EnemyStats, Entity, GameState
 from .words import hp_band, next_level_band
 
@@ -200,7 +201,9 @@ def perceive(snapshot: GameState, memory: PerceptionMemory | None = None) -> Per
     ratio = 1.0
     if player is not None and player.hp_max > 1e-6:
         ratio = max(0.0, min(1.0, player.hp / player.hp_max))
-    bands = durability_bands(snapshot.enemy_catalog)
+    # A published catalog is this run's data and replaces the static table.
+    # An empty catalog means the mod has not sent one, which is the live case, so the table applies.
+    bands = durability_bands(snapshot.enemy_catalog) if snapshot.enemy_catalog else dict(MAD_FOREST_BANDS)
     boss_points = [(boss.x, boss.y) for boss in snapshot.bosses]
     bodies: list[Body] = []
     seen_boss = False

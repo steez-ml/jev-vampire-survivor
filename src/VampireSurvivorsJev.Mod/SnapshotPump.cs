@@ -156,6 +156,7 @@ internal static class SnapshotConfig
     public static bool ProbeWalls = true;
     public static bool ProbeWeapons = true;
     public static bool ProbeDestructibles = true;
+    public static bool ProbeEnemyTypes = true;
     public static float PolarR0 = DefaultPolarR0;
     public static float PolarR1 = DefaultPolarR1;
     public static float PolarR2 = DefaultPolarR2;
@@ -184,6 +185,11 @@ internal static class SnapshotConfig
             "ProbeDestructibles",
             true,
             "Publish nearby braziers/candelabras (destructibles) as typed pins. Set false to skip that group walk.").Value;
+        ProbeEnemyTypes = config.Bind(
+            "Telemetry",
+            "ProbeEnemyTypes",
+            true,
+            "Publish EnemyController.EnemyType on enemies and bosses. Set false to skip that read.").Value;
         PolarR0 = config.Bind(
             "Polar",
             "InnerRadius",

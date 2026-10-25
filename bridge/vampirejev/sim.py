@@ -409,6 +409,21 @@ def clear_xp() -> World:
     return world
 
 
+def forest_line(heavy: bool = False) -> World:
+    """Typed Mad Forest enemies and no catalog, which is what a live snapshot will look like.
+
+    BAT1 is frail on the wiki table. MUDMAN2 is tanky. Neither number comes from a catalog.
+    """
+    world = World(radii=(6.0, 16.0, 40.0), magnet=1.2, weapons=[WeaponState("WHIP", 2)])
+    world.gems.append(SimGem(8.0, 0.0, 40))
+    if heavy:
+        world.enemies.append(SimEnemy(3.0, 0.0, speed=0.0, type="MUDMAN2"))
+    else:
+        for i in range(3):
+            world.enemies.append(SimEnemy(2.4 + 0.7 * i, 0.3 - 0.3 * i, speed=0.0, type="BAT1"))
+    return world
+
+
 def whip_line(heavy: bool = False) -> World:
     """Gems to the east. A line of bats on the way, or one tank in that same spot."""
     world = _stage(weapons=[WeaponState("WHIP", 2)])

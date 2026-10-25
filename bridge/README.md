@@ -78,6 +78,17 @@ The v0 policy fled anything inside the inner ring and treated one bat on a gem p
 
 **Body flags** (`player.blocked`, v4) are Phaser's own per-frame collision sides. Left/right are used directly; Phaser's up/down are calibrated against the tracker before use (`yflip=` in the status line shows the verdict). `--no-body-flags` disables them.
 
+## Checking enemy types on a live run
+
+The mod publishes `EnemyController.EnemyType` on `enemies[]` and `bosses[]` when `Telemetry.ProbeEnemyTypes` is true (the default) in `BepInEx\config\ydste.vampirejev.cfg`. Copy the rebuilt DLL into the game's plugins folder first. One failed read logs once to `debug-*.log` and then sends enemies with no type for the rest of that launch.
+
+1. In that config file set `Telemetry.RecordJsonl = true`. This writes a JSONL recording under `recordings/` at 10 Hz. It is not the live path the bot uses.
+2. Start Vampire Survivors, start a Mad Forest run, and let the plugin record for a minute or two. Arming the bot is optional. `baseline` is enough.
+3. Open the JSONL and check that `enemies` objects include `"type": "BAT1"` (or another `EnemyType` name), not only x and y.
+4. Count how many of those types are still unknown to the bridge. A type is unknown when it is missing from `bridge/vampirejev/enemy_bands.py` and the snapshot has no `enemy_catalog`. Report that share: unknown types divided by enemies that had a type. Those stay dangerous, so the bot will not walk through them.
+
+HP and a per-enemy id are not in the snapshot yet. The band table is the wiki's base health, marked unchecked, until a recording can be compared with `EnemyData.maxHp`.
+
 ## Offline tools
 
 ```powershell

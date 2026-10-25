@@ -51,7 +51,7 @@
       "y": -1.5,
       "vx": 0,
       "vy": -0.4,
-      "type": "BAT",
+      "type": "BAT1",
       "hp": 6,
       "hp_max": 8,
       "id": "e1"
@@ -87,11 +87,11 @@
     { "x": 20, "y": -4, "value": 40 }
   ],
   "enemy_catalog": [
-    { "type": "BAT", "hp_max": 8, "speed": 1.4 },
-    { "type": "TANK", "hp_max": 400, "speed": 0.6 }
+    { "type": "BAT1", "hp_max": 1, "speed": 1.4 },
+    { "type": "MUDMAN2", "hp_max": 150, "speed": 0.6 }
   ],
   "enemy_sectors": [
-    { "sector": 2, "type": "BAT", "count": 12 }
+    { "sector": 2, "type": "BAT1", "count": 12 }
   ],
   "card_screen": {
     "kind": "level_up",

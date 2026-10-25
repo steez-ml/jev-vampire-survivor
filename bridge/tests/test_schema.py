@@ -133,11 +133,11 @@ class SchemaTests(unittest.TestCase):
         _validate(example, schema)
         snapshot = GameState.from_json(EXAMPLE_V5_PATH.read_text(encoding="utf-8"))
         self.assertEqual(snapshot.schema_version, 5)
-        self.assertEqual(snapshot.enemies[0].type, "BAT")
+        self.assertEqual(snapshot.enemies[0].type, "BAT1")
         self.assertEqual(snapshot.enemies[0].uid, "e1")
         self.assertAlmostEqual(snapshot.enemies[0].hp or 0, 6)
         self.assertEqual(snapshot.xp_piles[0].value, 40)
-        self.assertEqual(snapshot.enemy_catalog[1].type, "TANK")
+        self.assertEqual(snapshot.enemy_catalog[1].type, "MUDMAN2")
         self.assertEqual(snapshot.enemy_sectors[0].count, 12)
         assert snapshot.card_screen is not None
         self.assertEqual(snapshot.card_screen.kind, "level_up")

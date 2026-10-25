@@ -2,7 +2,7 @@
 
 This is the living half of the project's guidance: architecture, phases, open questions, and a log of decisions. It is expected to change as we learn. The goal, philosophy, and hard boundaries live in [CHARTER.md](CHARTER.md). If a change here would contradict the charter, stop and discuss it first.
 
-**Status (2026-10-24):** the navigator is in the bridge and covered by offline tests. Live play is still `baseline` unless you pass `--controller`. Phase 0's latency numbers, the rate limits, and the pinned model are still blocked on an API key ([open question 1](#open-questions)). Enemy types, HP, and card offers are in the v5 schema and are not read from the game yet ([open questions 4-6](#open-questions)). Until they are, every live enemy is "toughness unknown", so `code` vs `baseline` is not a fair benchmark yet. See the [PR #1 review](reviews/pr-1-navigator.md).
+**Status (2026-10-24):** the navigator is in the bridge. Live play is still `baseline` unless you pass `--controller`. The mod now publishes `EnemyController.EnemyType` on enemies and bosses. HP, ids, and card offers are still not read ([open questions 4-6](#open-questions)). Mad Forest types missing from the unchecked wiki table stay "toughness unknown", so a full `code` vs `baseline` benchmark still waits on a live recording. Phase 0's latency numbers remain blocked on an API key ([open question 1](#open-questions)). See the [PR #1 review](reviews/pr-1-navigator.md).
 
 **How to update this file:** when a phase finishes or a plan changes, update the status line, edit the affected section, and add a dated entry to the [decision log](#decision-log). Do not delete old decisions. Add a new entry that supersedes them.
 
@@ -13,7 +13,7 @@ This is the living half of the project's guidance: architecture, phases, open qu
 - **The mod.** A BepInEx plugin in `src/VampireSurvivorsJev.Mod` reads the game (version 1.16.107 on this machine) and sends a JSON snapshot over localhost UDP about 20 times a second. Live snapshots are `contracts/game-state.v5.schema.json`. v4 recordings still parse. A snapshot contains:
   - a **3×8 polar grid** of enemy, XP, and wall occupancy. That is 3 distance rings × 8 compass sectors around the player, scaled to the camera view. Wall cells come from the stage's collision tiles (the **wall channel**).
   - gem piles in world space (`xp_piles`), clustered from the same gem read as the XP grid.
-  - up to 8 nearby enemies with velocity, but no type, HP, or ID;
+  - up to 8 nearby enemies with velocity and, when the probe is on, an `EnemyType` name. No HP and no per-enemy id yet;
   - bosses, chests, pickups (such as the floor chicken), and destructibles (such as braziers);
   - the player's HP, level, XP, magnet, facing, weapons, and **body blocked flags** (the physics engine's report of which sides the player is pressed against this frame).
 - **The overlay.** `src/VampireSurvivorsJev.Overlay` is a separate process with a status panel and a field display drawn over the game window. It reads local files that the mod and the bridge write.
@@ -337,6 +337,9 @@ Done when: one hands-off 30:00 on Mad Forest with any of the four starters, whic
 
 Newest first. Add entries; do not rewrite old ones.
 
+- **2026-10-24: enemy type is published; bands are an unchecked wiki table.** `EnemyController.EnemyType` (public getter, `VampireSurvivors.Data.EnemyType`) is read behind `Telemetry.ProbeEnemyTypes`, default on. A failure logs once and disables only that read. `StageEventId` is not a per-enemy id and is not published. `Hp` and `MaxHp()` were seen in the same metadata pass and are still not read.
+  - With no `enemy_catalog`, perception uses `bridge/vampirejev/enemy_bands.py` for the Mad Forest names listed there. The health numbers are from the public wiki (2026-10-24), not from this install's `EnemyData.maxHp`, so every row is unchecked. A catalog, when present, replaces the table. Missing types stay unknown.
+  - Bosses stay tanky. This does not close Phase 2 or the Phase 3 benchmark.
 - **2026-10-24: PR #1 review.** The full list is in [reviews/pr-1-navigator.md](reviews/pr-1-navigator.md). Fixed on the branch:
   - a freeze in front of guarded targets;
   - route danger that ignored the polar enemy grid;
