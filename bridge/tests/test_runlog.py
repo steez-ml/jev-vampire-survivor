@@ -40,10 +40,30 @@ class MenuTests(unittest.TestCase):
         sent: list[tuple[str, bool]] = []
         driver = MenuDriver(sender=lambda name, down: sent.append((name, down)))
         exe = MenuExecutor(gap_s=0.2)
-        self.assertTrue(exe.step(0.0, "screen", ("DOWN", "RETURN"), driver))
-        self.assertTrue(exe.step(0.2, "screen", ("DOWN", "RETURN"), driver))
-        self.assertFalse(exe.step(0.4, "screen", ("DOWN", "RETURN"), driver))
+        self.assertTrue(exe.step(0.0, "screen", ("DOWN", "RETURN"), True, driver))
+        self.assertTrue(exe.step(0.2, "screen", ("DOWN", "RETURN"), True, driver))
+        self.assertFalse(exe.step(0.4, "screen", ("DOWN", "RETURN"), True, driver))
         self.assertEqual([name for name, down in sent if down], ["DOWN", "RETURN"])
+
+    def test_a_late_answer_does_not_add_taps_to_the_same_screen(self) -> None:
+        sent: list[str] = []
+        driver = MenuDriver(sender=lambda name, down: sent.append(name) if down else None)
+        exe = MenuExecutor(gap_s=0.2)
+        self.assertFalse(exe.step(0.0, "screen", ("RETURN",), False, driver))
+        self.assertEqual(sent, [])
+        exe.step(0.1, "screen", ("RETURN",), True, driver)
+        exe.step(0.3, "screen", ("DOWN", "DOWN", "RETURN"), True, driver)
+        exe.step(0.6, "screen", ("DOWN", "DOWN", "RETURN"), True, driver)
+        self.assertEqual(sent, ["RETURN"])
+
+    def test_the_same_screen_again_after_play_gets_its_own_taps(self) -> None:
+        sent: list[str] = []
+        driver = MenuDriver(sender=lambda name, down: sent.append(name) if down else None)
+        exe = MenuExecutor(gap_s=0.2)
+        exe.step(0.0, "chest|", ("RETURN",), True, driver)
+        exe.reset()
+        exe.step(5.0, "chest|", ("RETURN",), True, driver)
+        self.assertEqual(sent, ["RETURN", "RETURN"])
 
 
 if __name__ == "__main__":

@@ -28,6 +28,12 @@ SURVIVES = "survives"
 NEAR_S = 1.5
 DROP_FAST = 0.7
 HOLD_SLOW = 0.1
+# Seconds of HP history kept per enemy. Must stay longer than NEAR_S, or "survives" can never be seen.
+HISTORY_S = 3.0
+# An id not seen for this long is forgotten, so a 30-minute run does not grow the table.
+FORGET_S = 5.0
+# The game pools enemies. A jump back up in HP means the id now belongs to a fresh enemy.
+RESPAWN_JUMP = 0.3
 
 
 @dataclass
@@ -71,6 +77,8 @@ class PerceptionMemory:
 
     _hp: dict[str, deque] = field(default_factory=dict)
     _type_of: dict[str, str] = field(default_factory=dict)
+    _seen: dict[str, float] = field(default_factory=dict)
+    _outlooks: dict[str, str] = field(default_factory=dict)
     _trend: deque = field(default_factory=lambda: deque(maxlen=60))
     _last_t: float = -1.0
 
@@ -79,6 +87,7 @@ class PerceptionMemory:
         if self._last_t >= 0.0 and (t < self._last_t or t - self._last_t > 5.0):
             self._hp.clear()
             self._type_of.clear()
+            self._seen.clear()
             self._trend.clear()
         self._last_t = t
         level = snapshot.player.level if snapshot.player and snapshot.player.level is not None else 0
@@ -92,9 +101,23 @@ class PerceptionMemory:
                 continue
             if math.hypot(body.x - snapshot.player.x, body.y - snapshot.player.y) > near:
                 continue
+            ratio = body.hp / body.hp_max
+            hist = self._hp.get(body.uid)
+            if hist is not None and (self._type_of.get(body.uid) != body.type or ratio > hist[-1][1] + RESPAWN_JUMP):
+                hist = None
+            if hist is None:
+                hist = deque()
+                self._hp[body.uid] = hist
             self._type_of[body.uid] = body.type
-            hist = self._hp.setdefault(body.uid, deque(maxlen=24))
-            hist.append((t, body.hp / body.hp_max))
+            self._seen[body.uid] = t
+            hist.append((t, ratio))
+            while hist and t - hist[0][0] > HISTORY_S:
+                hist.popleft()
+        for uid in [uid for uid, last in self._seen.items() if t - last > FORGET_S]:
+            self._seen.pop(uid, None)
+            self._hp.pop(uid, None)
+            self._type_of.pop(uid, None)
+        self._outlooks = self._learned_outlooks()
 
     def trend_text(self) -> str:
         if len(self._trend) < 2:
@@ -114,26 +137,30 @@ class PerceptionMemory:
 
     def outlook_for(self, type_name: str, default: str) -> str:
         """Promote or demote a catalog band once this run has watched that type lose HP."""
-        samples: list[tuple[float, float, float, float]] = []
+        return self._outlooks.get(type_name, default)
+
+    def _learned_outlooks(self) -> dict[str, str]:
+        fast: dict[str, int] = {}
+        held: dict[str, int] = {}
         for uid, hist in self._hp.items():
-            if self._type_of.get(uid) == type_name and hist:
-                samples.append((hist[0][0], hist[0][1], hist[-1][0], hist[-1][1]))
-        if not samples:
-            return default
-        fast = 0
-        held = 0
-        for start_t, start_hp, end_t, end_hp in samples:
-            span = end_t - start_t
-            dropped = start_hp - end_hp
+            if not hist:
+                continue
+            type_name = self._type_of.get(uid, "")
+            span = hist[-1][0] - hist[0][0]
+            dropped = hist[0][1] - hist[-1][1]
             if span >= 0.6 and dropped >= DROP_FAST:
-                fast += 1
+                fast[type_name] = fast.get(type_name, 0) + 1
             elif span >= NEAR_S and dropped <= HOLD_SLOW:
-                held += 1
-        if held > 0 and held >= fast:
-            return SURVIVES
-        if fast > 0 and fast > held:
-            return KILLABLE
-        return default
+                held[type_name] = held.get(type_name, 0) + 1
+        out: dict[str, str] = {}
+        for type_name in set(fast) | set(held):
+            f = fast.get(type_name, 0)
+            h = held.get(type_name, 0)
+            if h > 0 and h >= f:
+                out[type_name] = SURVIVES
+            elif f > h:
+                out[type_name] = KILLABLE
+        return out
 
 
 def durability_bands(catalog: list[EnemyStats]) -> dict[str, str]:
@@ -213,16 +240,13 @@ def _near_boss(enemy: Entity, bosses: list[tuple[float, float]]) -> bool:
 def _body(entity: Entity, boss: bool, bands: dict[str, str], memory: PerceptionMemory | None) -> Body:
     band = TANKY if boss else bands.get(entity.type, UNKNOWN)
     outlook = SURVIVES if boss else outlook_from_band(band)
-    uid = entity.uid
-    if not uid and entity.type:
-        uid = f"{entity.type}:{entity.x:.1f}:{entity.y:.1f}"
     return Body(
         type=entity.type,
         x=entity.x,
         y=entity.y,
         vx=entity.vx,
         vy=entity.vy,
-        uid=uid,
+        uid=entity.uid,
         hp=entity.hp,
         hp_max=entity.hp_max,
         boss=boss,

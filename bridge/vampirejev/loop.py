@@ -131,16 +131,15 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 driver.all_up()
 
-            if args.menu_keys == "provisional" and mind_out is not None and armed and focused and not snapshot_playable(snapshot):
-                signature = mind_out.card_line
-                menu_exec.step(now, signature, mind_out.card_keys, menu)
+            if mind_out is not None and not mind_out.card_signature:
+                menu_exec.reset()
+            elif args.menu_keys == "provisional" and mind_out is not None and armed and focused and not snapshot_playable(snapshot):
+                menu_exec.step(now, mind_out.card_signature, mind_out.card_keys, mind_out.card_ready, menu)
 
             if log.active and was_armed and not armed:
                 log.event("gate", event="disarm", why="user-wasd" if overridden else "toggle", t=_survived(snapshot))
             if log.active and was_focused and not focused:
                 log.event("gate", event="unfocused", t=_survived(snapshot))
-            if log.active and snapshot is not None and snapshot.run.paused:
-                pass
             was_armed = armed
             was_focused = focused
 
@@ -249,7 +248,7 @@ def _mind_fields(mind_out: MindOutput) -> dict[str, str]:
         "decider": mind_out.decider,
         "confidence": "" if mind_out.confidence is None else f"{mind_out.confidence:.2f}",
         "latency_ms": "" if mind_out.latency_ms is None else f"{mind_out.latency_ms:.0f}",
-        "fallback": f"{mind_out.fallback_share:.2f}",
+        "fallback": "" if mind_out.fallback_share is None else f"{mind_out.fallback_share:.2f}",
         "stance": mind_out.stance,
         "option": mind_out.option_id,
         "mark": str(mind_out.mark_sector),

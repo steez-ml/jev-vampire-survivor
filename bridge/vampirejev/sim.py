@@ -434,6 +434,16 @@ def garlic_swarm(boss: bool = False) -> World:
     return world
 
 
+def horde_gem() -> World:
+    """What live snapshots look like today: no enemy types, no catalog. A far pile sits behind a crowd
+    in the middle ring, past the few bodies the snapshot lists, so only the polar bins see it."""
+    world = World(radii=(6.0, 16.0, 40.0), magnet=1.2, enemies_stage=40, survived=120.0)
+    world.gems.append(SimGem(24.0, 0.0, 40))
+    for i in range(12):
+        world.enemies.append(SimEnemy(10.0 + (i % 4) * 0.8, -1.2 + (i // 4) * 1.2, speed=0.0))
+    return world
+
+
 def low_chicken() -> World:
     world = _stage(hp=20, survived=50, enemies_stage=8)
     world.pickups.append(TypedPin("ROAST", 4.5, 0.0))
@@ -488,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
             f"healed={world.healed:.1f} stuck_events={pilot.tracker.events} walls_remembered={len(pilot.memory)}"
         )
         return 0
-    elif scenario in {"open-gem", "clear-xp", "whip", "whip-heavy", "garlic", "garlic-boss", "chicken", "brazier"}:
+    elif scenario in {"open-gem", "clear-xp", "whip", "whip-heavy", "garlic", "garlic-boss", "chicken", "brazier", "horde", "guarded"}:
         world = {
             "open-gem": open_gem,
             "clear-xp": clear_xp,
@@ -498,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
             "garlic-boss": lambda: garlic_swarm(True),
             "chicken": low_chicken,
             "brazier": low_brazier,
+            "horde": horde_gem,
+            "guarded": pile,
         }[scenario]()
         _mind, _rows = run_mind(world, 3.0, trace=True)
         print(f"done: x={world.x:.2f} y={world.y:.2f} hp={world.hp:.1f} collected={world.collected:.0f} healed={world.healed:.1f}")
@@ -505,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(
             "scenarios: corridor [--walls] [--body], pile [--lowhp], roast [--guards], altar [--guards], "
-            "open-gem, clear-xp, whip, whip-heavy, garlic, garlic-boss, chicken, brazier",
+            "open-gem, clear-xp, whip, whip-heavy, garlic, garlic-boss, chicken, brazier, horde, guarded",
             file=sys.stderr,
         )
         return 2

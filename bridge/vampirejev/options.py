@@ -14,8 +14,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .perception import SURVIVES, Body, Perception
-from .polar import SECTORS
+from .perception import SLOW, SURVIVES, Body, Perception
+from .polar import SECTORS, ring_index, sector_index
 from .snapshot import GameState, XpPile
 from .weapons import AIM_FACING, AIM_MOVE, aim_class
 from .words import (
@@ -29,6 +29,10 @@ from .words import (
 
 MAX_OPTIONS = 8
 ROUTE_PAD = 2.4
+# Enemies the polar bins count on the way to a target. The bins see past the few
+# bodies the snapshot lists, but not what those enemies are. Uncalibrated.
+CROWD_LIGHT = 3
+CROWD_HEAVY = 8
 HEAL_TYPES = frozenset({"ROAST", "ALWAYS_ROAST", "LITTLEHEART", "TP_WALL_CHICKEN"})
 CLEAR_TYPES = frozenset({"VACUUM", "ROSARY", "OROLOGION"})
 
@@ -54,6 +58,13 @@ class Option:
     danger: str
     distance: str
     hold: bool = False
+
+
+@dataclass(frozen=True)
+class Route:
+    danger: str
+    killable: bool
+    clause: str
 
 
 def build_options(snapshot: GameState, perception: Perception) -> list[Option]:
@@ -107,9 +118,9 @@ def _gem_options(snapshot: GameState, perception: Perception, radii: tuple[float
             continue
         seen.add(ident)
         dist = math.hypot(pile.x - player.x, pile.y - player.y)
-        danger, killable = _route(player.x, player.y, pile.x, pile.y, perception.bodies)
-        stance = _travel_stance(snapshot, killable)
-        aim_x, aim_y = _travel_aim(player.x, player.y, pile.x, pile.y, stance, snapshot.player.facing_x if snapshot.player else 1)
+        route = _route(snapshot, perception, pile.x, pile.y)
+        stance = _travel_stance(snapshot, route.killable)
+        aim_x, aim_y = _travel_aim(player.x, player.y, pile.x, pile.y, stance, player.facing_x)
         value = "high" if pile.value >= 20 else "medium" if pile.value >= 6 else "low"
         direction = direction_name(pile.x - player.x, pile.y - player.y)
         band = distance_band(dist, radii)
@@ -124,11 +135,11 @@ def _gem_options(snapshot: GameState, perception: Perception, radii: tuple[float
                 aim_y=aim_y,
                 facts=_join(
                     f"Gem pile {direction}, {band}",
-                    _danger_clause(danger),
-                    _killable_clause(killable),
+                    route.clause,
+                    _killable_clause(route.killable),
                 ),
                 value=value,
-                danger=danger,
+                danger=route.danger,
                 distance=band,
             )
         )
@@ -210,8 +221,8 @@ def _pin(
     prefix = kind if kind != "brazier" else "brazier"
     ident = option_id(prefix if kind != "pickup" else f"pickup_{_slug(type_name)}", x, y)
     dist = math.hypot(x - player.x, y - player.y)
-    danger, killable = _route(player.x, player.y, x, y, perception.bodies)
-    stance = _travel_stance(snapshot, killable)
+    route = _route(snapshot, perception, x, y)
+    stance = _travel_stance(snapshot, route.killable)
     aim_x, aim_y = _travel_aim(player.x, player.y, x, y, stance, player.facing_x)
     band = distance_band(dist, radii)
     return Option(
@@ -222,9 +233,9 @@ def _pin(
         y=y,
         aim_x=aim_x,
         aim_y=aim_y,
-        facts=_join(f"{label} {direction_name(x - player.x, y - player.y)}, {band}", _danger_clause(danger)),
+        facts=_join(f"{label} {direction_name(x - player.x, y - player.y)}, {band}", route.clause),
         value=value,
-        danger=danger,
+        danger=route.danger,
         distance=band,
     )
 
@@ -377,17 +388,63 @@ def _clusters(bodies: list[Body]) -> list[list[Body]]:
     return groups
 
 
-def _route(x0: float, y0: float, x1: float, y1: float, bodies: list[Body]) -> tuple[str, bool]:
+def _route(snapshot: GameState, perception: Perception, x1: float, y1: float) -> Route:
+    player = snapshot.player
+    assert player is not None
+    x0, y0 = player.x, player.y
+
     def blocking(body: Body) -> bool:
         return _in_front(x0, y0, x1, y1, body.x, body.y, ROUTE_PAD)
 
+    bodies = perception.bodies
     dangerous = [body for body in bodies if body.dangerous and blocking(body)]
     killable = any((not body.dangerous) and blocking(body) for body in bodies)
     if any(body.boss or body.outlook == SURVIVES or body.band == "tanky" for body in dangerous):
-        return "heavy", killable
-    if dangerous:
-        return "light", killable
-    return "clear", killable
+        return Route("heavy", killable, "something that survives our weapons is on the way")
+    crowd = _crowd_on_way(snapshot, perception, x1 - x0, y1 - y0)
+    if crowd >= CROWD_HEAVY:
+        return Route("heavy", killable, f"{_enemies(crowd)} on the way")
+    if dangerous and crowd < CROWD_LIGHT and all(body.outlook == SLOW for body in dangerous):
+        verb = "takes" if len(dangerous) == 1 else "take"
+        return Route("light", killable, f"{_enemies(len(dangerous))} on the way that {verb} a while to kill")
+    if dangerous or crowd >= CROWD_LIGHT:
+        return Route("light", killable, f"{_enemies(max(len(dangerous), crowd))} on the way")
+    return Route("clear", killable, "nothing dangerous on the way")
+
+
+def _crowd_on_way(snapshot: GameState, perception: Perception, dx: float, dy: float) -> int:
+    """Enemies in the polar cells between us and the target, minus the ones we know die fast.
+
+    A straight line from the player stays inside one sector. The target's own ring
+    counts half, because the bin cannot say whether those enemies are short of the
+    target or past it.
+    """
+    player = snapshot.player
+    assert player is not None
+    radii = snapshot.polar.radii
+    sector = sector_index(dx, dy)
+    last = ring_index(math.hypot(dx, dy), radii)
+    total = 0.0
+    for ring in range(last + 1):
+        weight = 0.5 if ring == last else 1.0
+        total += snapshot.polar.enemy[ring * SECTORS + sector] * weight
+    for body in perception.bodies:
+        if body.dangerous:
+            continue
+        bx = body.x - player.x
+        by = body.y - player.y
+        if sector_index(bx, by) == sector and ring_index(math.hypot(bx, by), radii) <= last:
+            total -= 1.0
+    return max(0, int(round(total)))
+
+
+def _enemies(count: int) -> str:
+    bucket = count_bucket(count)
+    if bucket == "one":
+        return "one enemy"
+    if bucket == "a few":
+        return "a few enemies"
+    return f"{bucket} of enemies"
 
 
 def _in_front(x0: float, y0: float, x1: float, y1: float, px: float, py: float, pad: float) -> bool:
@@ -501,14 +558,6 @@ def _enemy_facts(type_name: str, count: int, direction: str, band: str, stance: 
         bits.append("garlic reaches them")
     bits.append(outlook)
     return "; ".join(bits)
-
-
-def _danger_clause(danger: str) -> str:
-    if danger == "clear":
-        return "nothing dangerous on the way"
-    if danger == "light":
-        return "one enemy on the way that takes a while to kill"
-    return "something that survives our weapons is on the way"
 
 
 def _killable_clause(killable: bool) -> str:

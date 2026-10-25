@@ -52,20 +52,30 @@ class MenuDriver:
 
 
 class MenuExecutor:
-    """Play a short tap plan once per card screen, with a gap so the game can see each tap."""
+    """Play one tap plan per card screen, with a gap so the game can see each tap.
+
+    The plan is taken once the picker marks it ready and is kept until the screen
+    changes, so an answer that lands mid-plan cannot add a second set of taps.
+    """
 
     def __init__(self, gap_s: float = 0.18) -> None:
         self.gap_s = gap_s
+        self.reset()
+
+    def reset(self) -> None:
         self._signature = ""
         self._plan: tuple[str, ...] = ()
         self._index = 0
         self._next = 0.0
 
-    def step(self, now: float, signature: str, plan: tuple[str, ...], driver: MenuDriver) -> bool:
+    def step(self, now: float, signature: str, plan: tuple[str, ...], ready: bool, driver: MenuDriver) -> bool:
         if signature != self._signature:
+            self.reset()
             self._signature = signature
+        if not self._plan:
+            if not ready or not plan:
+                return False
             self._plan = plan
-            self._index = 0
             self._next = now
         if self._index >= len(self._plan):
             return False

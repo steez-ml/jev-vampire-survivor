@@ -7,14 +7,15 @@ import math
 import random
 import unittest
 
-from vampirejev.arbiter import accept_choice
+from vampirejev import probe
+from vampirejev.arbiter import HOLD_S, accept_choice
 from vampirejev.cards import decide_cards
-from vampirejev.jevclient import FakeJevClient, JevResult, MissingApiKey, require_api_key
-from vampirejev.mind import Mind
+from vampirejev.jevclient import CARD_TIMEOUT_S, FakeJevClient, JevResult, MissingApiKey, require_api_key
+from vampirejev.mind import NO_PROGRESS_S, Mind
 from vampirejev.motor import choose_heading
 from vampirejev.navigator import movement_request
 from vampirejev.options import build_options
-from vampirejev.perception import FRAIL, KILLABLE, PerceptionMemory, STURDY, TANKY, durability_bands, perceive
+from vampirejev.perception import FRAIL, KILLABLE, SURVIVES, PerceptionMemory, STURDY, TANKY, durability_bands, perceive
 from vampirejev.picker import CodePicker
 from vampirejev.snapshot import (
     CardOffer,
@@ -28,8 +29,10 @@ from vampirejev.snapshot import (
     Polar,
     RunState,
     WeaponState,
+    XpPile,
 )
-from vampirejev.sim import clear_xp, garlic_swarm, low_brazier, low_chicken, open_gem, run_mind, whip_line
+from vampirejev.sim import SimEnemy, SimGem, clear_xp, garlic_swarm, horde_gem, low_brazier, low_chicken, open_gem, pile, run_mind, whip_line
+from vampirejev.wasd import heading_to_keys
 from vampirejev.words import has_raw_measurement
 
 
@@ -104,6 +107,44 @@ class PerceptionTests(unittest.TestCase):
         tank = next(body for body in seen.bodies if body.type == "TANK")
         self.assertEqual(tank.outlook, KILLABLE)
 
+    def test_a_type_that_keeps_its_hp_near_us_is_learned_as_surviving(self) -> None:
+        memory = PerceptionMemory()
+        catalog = [EnemyStats("BAT", 8, 1), EnemyStats("SKEL", 40, 1), EnemyStats("TANK", 400, 1)]
+        seen = None
+        for tick in range(41):  # two seconds at 20 Hz, HP never moves
+            snapshot = _running(_player(), enemies=[Entity(1, 0, 0, 0, "SKEL", 40, 40, "s1")], enemy_catalog=catalog)
+            snapshot.run.survived_seconds = tick * 0.05
+            seen = perceive(snapshot, memory)
+        assert seen is not None
+        self.assertEqual(seen.bodies[0].outlook, SURVIVES)
+
+    def test_enemies_without_an_id_are_not_tracked_and_old_ids_are_forgotten(self) -> None:
+        memory = PerceptionMemory()
+        for tick in range(10):
+            snapshot = _running(_player(), enemies=[Entity(1 + tick * 0.1, 0, 0, 0, "BAT", 8, 8, "")])
+            snapshot.run.survived_seconds = tick * 0.05
+            perceive(snapshot, memory)
+        self.assertEqual(memory._hp, {})
+        first = _running(_player(), enemies=[Entity(1, 0, 0, 0, "BAT", 8, 8, "b1")])
+        first.run.survived_seconds = 30.0
+        perceive(first, memory)
+        self.assertIn("b1", memory._hp)
+        later = _running(_player(), enemies=[])
+        later.run.survived_seconds = 33.0
+        perceive(later, memory)
+        self.assertIn("b1", memory._hp)
+        later.run.survived_seconds = 36.0
+        perceive(later, memory)
+        self.assertNotIn("b1", memory._hp)
+
+    def test_a_pooled_id_back_at_full_hp_starts_a_new_history(self) -> None:
+        memory = PerceptionMemory()
+        for second, hp in ((0.0, 8.0), (0.5, 2.0), (0.6, 8.0)):
+            snapshot = _running(_player(), enemies=[Entity(1, 0, 0, 0, "BAT", hp, 8, "b1")])
+            snapshot.run.survived_seconds = second
+            perceive(snapshot, memory)
+        self.assertEqual(len(memory._hp["b1"]), 1)
+
 
 class OptionTests(unittest.TestCase):
     def test_facts_have_no_coordinates(self) -> None:
@@ -140,6 +181,22 @@ class OptionTests(unittest.TestCase):
         snapshot = _running(_player(), polar=Polar(radii=(6, 16, 40), xp=xp))
         options = build_options(snapshot, perceive(snapshot))
         self.assertTrue(any(item.kind == "gems" and "east" in item.facts for item in options))
+
+    def test_a_crowd_past_the_listed_bodies_makes_the_way_heavy(self) -> None:
+        enemy = [0.0] * 24
+        enemy[8 + 2] = 12  # middle ring, east: nothing the snapshot lists by position
+        snapshot = _running(_player(), polar=Polar(radii=(6, 16, 40), enemy=enemy), xp_piles=[XpPile(24, 0, 40)])
+        gem = next(item for item in build_options(snapshot, perceive(snapshot)) if item.kind == "gems")
+        self.assertEqual(gem.danger, "heavy")
+        self.assertIn("a large group of enemies on the way", gem.facts)
+        self.assertFalse(has_raw_measurement(gem.facts))
+
+    def test_enemies_of_unknown_toughness_are_not_called_slow(self) -> None:
+        snapshot = _running(_player(), enemies=[Entity(3, 0, 0, 0, "", None, None, "")], xp_piles=[XpPile(8, 0, 30)])
+        gem = next(item for item in build_options(snapshot, perceive(snapshot)) if item.kind == "gems")
+        self.assertEqual(gem.danger, "light")
+        self.assertIn("one enemy on the way", gem.facts)
+        self.assertNotIn("a while to kill", gem.facts)
 
 
 class PickerTests(unittest.TestCase):
@@ -308,6 +365,117 @@ class JevRequestTests(unittest.TestCase):
             mind.close()
 
 
+class _SilentBackground:
+    """A background caller whose answer never arrives. No thread, no network."""
+
+    disabled = False
+
+    def submit(self, request) -> None:
+        del request
+
+    def latest(self, kind: str):
+        del kind
+        return None
+
+    def close(self) -> None:
+        pass
+
+
+class MindTests(unittest.TestCase):
+    def test_a_jev_pick_expires_when_answers_stop(self) -> None:
+        world = open_gem()
+        world.gems[0] = SimGem(20.0, 0.0, 40)  # far enough that walking toward it never arrives
+        snapshot = world.snapshot()
+        gem = next(item.id for item in build_options(snapshot, perceive(snapshot)) if item.kind == "gems")
+        client = FakeJevClient(choice=gem, confidence=0.95)
+        mind = Mind(controller="jev", client=client, sync=True)
+        keys: frozenset[str] = frozenset()
+        seen: list[tuple[float, str]] = []
+        try:
+            for i in range(int(round((HOLD_S + 0.5) / 0.05))):
+                now = 1.0 + i * 0.05
+                out = mind.step(world.snapshot(), keys, now)
+                seen.append((now, out.decider))
+                client.fail = RuntimeError("down")
+                keys = heading_to_keys(out.command.dx, out.command.dy)
+                world.step(keys, 0.05)
+        finally:
+            mind.close()
+        self.assertTrue(all(who == "jev" for now, who in seen if now <= 1.0 + HOLD_S - 0.05))
+        self.assertEqual(seen[-1][1], "code")
+
+    def test_a_jev_pick_is_dropped_when_the_way_gets_worse(self) -> None:
+        world = open_gem()
+        snapshot = world.snapshot()
+        gem = next(item.id for item in build_options(snapshot, perceive(snapshot)) if item.kind == "gems")
+        client = FakeJevClient(choice=gem, confidence=0.95)
+        mind = Mind(controller="jev", client=client, sync=True)
+        try:
+            mind.step(snapshot, [], 1.0)
+            self.assertEqual(mind.commit_source, "jev")
+            client.fail = RuntimeError("down")
+            world.enemies.append(SimEnemy(1.4, 0.0, speed=0.0, type="TANK", hp=500, hp_max=500, uid="t"))
+            mind.step(world.snapshot(), [], 1.1)
+            self.assertEqual(mind.commit_source, "code")
+        finally:
+            mind.close()
+
+    def test_fallback_share_is_only_reported_for_jev(self) -> None:
+        snapshot = open_gem().snapshot()
+        mind = Mind(controller="code", sync=True)
+        try:
+            self.assertIsNone(mind.step(snapshot, [], 1.0).fallback_share)
+        finally:
+            mind.close()
+
+    def test_jev_cards_wait_for_the_answer_then_fall_back(self) -> None:
+        screen = CardScreen(
+            "level_up",
+            [CardOffer(0, "Armor", "passive", "ARMOR", 1, True, ""), CardOffer(1, "Knife", "weapon", "KNIFE", 1, True, "")],
+        )
+        snapshot = _running(_player(weapons=[WeaponState("WHIP", 1)]), card_screen=screen)
+        snapshot.run.level_up = True
+        mind = Mind(controller="code", cards="jev", client=FakeJevClient())
+        assert mind.background is not None
+        mind.background.close()
+        mind.background = _SilentBackground()  # type: ignore[assignment]
+        try:
+            waiting = mind.step(snapshot, [], 10.0)
+            self.assertFalse(waiting.card_ready)
+            self.assertTrue(waiting.card_signature)
+            late = mind.step(snapshot, [], 10.0 + CARD_TIMEOUT_S + 0.05)
+            self.assertTrue(late.card_ready)
+            self.assertEqual(late.card_signature, waiting.card_signature)
+            self.assertEqual(late.card_keys, ("DOWN", "RETURN"))
+        finally:
+            mind.close()
+
+
+class ProbeTests(unittest.TestCase):
+    def test_late_answers_count_and_position_bias_shows(self) -> None:
+        rows = [
+            {"ok": True, "choice": "a", "order": ["a", "b", "c"], "latency_s": 0.1, "input_tokens": 300, "error": ""},
+            {"ok": True, "choice": "b", "order": ["b", "a", "c"], "latency_s": 0.2, "input_tokens": 300, "error": ""},
+            {"ok": True, "choice": "a", "order": ["c", "a", "b"], "latency_s": 1.4, "input_tokens": 300, "error": ""},
+            {"ok": False, "choice": "", "order": ["a", "b", "c"], "latency_s": 5.0, "input_tokens": None, "error": "timeout"},
+        ]
+        stats = probe.summarize_rows(rows)
+        self.assertEqual(stats["ok"], 3)
+        self.assertAlmostEqual(stats["late"], 0.5)
+        self.assertAlmostEqual(stats["agree"], 2 / 3)
+        self.assertAlmostEqual(stats["first_slot"], 2 / 3)
+        self.assertEqual(stats["top"], "a")
+
+    def test_probe_runs_offline_with_the_fake_client(self) -> None:
+        import asyncio
+
+        lines: list[str] = []
+        asyncio.run(probe.run_probe(models=("fake",), make_client=lambda model: FakeJevClient(), out=lines.append))
+        self.assertTrue(lines[0].startswith("model,"))
+        self.assertTrue(any(",crowded,8," in line for line in lines))
+        self.assertFalse(any("FAILED" in line for line in lines))
+
+
 class ScenarioTests(unittest.TestCase):
     def test_open_gem_is_taken(self) -> None:
         world = open_gem()
@@ -353,6 +521,28 @@ class ScenarioTests(unittest.TestCase):
         brazier = low_brazier()
         run_mind(brazier, 3.5)
         self.assertGreater(brazier.healed, 0)
+
+    def test_untyped_crowd_in_the_middle_ring_is_not_walked_into(self) -> None:
+        world = horde_gem()
+        _mind, rows = run_mind(world, 6.0)
+        self.assertFalse(rows[0][6].startswith("gems"))
+        self.assertEqual(world.damage, 0.0)
+
+    def test_untyped_guards_on_a_pile_do_not_freeze_the_bot(self) -> None:
+        world = pile()
+        _mind, rows = run_mind(world, 6.0)
+        self.assertLess(_longest_still(rows), NO_PROGRESS_S + 0.5)
+        self.assertTrue(any(not row[6].startswith("gems") for row in rows))
+
+
+def _longest_still(rows, radius: float = 0.25) -> float:
+    best = 0.0
+    start = 0
+    for i, row in enumerate(rows):
+        while math.hypot(row[1] - rows[start][1], row[2] - rows[start][2]) > radius:
+            start += 1
+        best = max(best, row[0] - rows[start][0])
+    return best
 
 
 def _east_option():

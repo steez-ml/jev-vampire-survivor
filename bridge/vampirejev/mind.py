@@ -12,11 +12,11 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
-from .arbiter import accept_choice, fresh_play_safe
+from .arbiter import DANGER_RANK, HOLD_S, accept_choice, fresh_play_safe
 from .cards import decide_cards
 from .gate import snapshot_playable
-from .jevclient import PINNED_MODEL, TypeSafeJevClient
-from .motor import Motor
+from .jevclient import CARD_TIMEOUT_S, PINNED_MODEL, TypeSafeJevClient
+from .motor import ARRIVE, Motor
 from .navigator import JevBackground, card_request, movement_request, sync_ask
 from .options import Option, build_options
 from .perception import PerceptionMemory, perceive
@@ -24,6 +24,13 @@ from .picker import CodePicker
 from .policy import Command
 from .polar import SECTOR_NAMES
 from .snapshot import CardScreen, GameState
+
+# A target we have stopped closing on is set aside for a while, so the motor does
+# not dither forever in front of a guard it will not touch. Distances are world
+# units and uncalibrated.
+NO_PROGRESS_S = 1.5
+PROGRESS_STEP = 0.3
+SHUN_S = 3.0
 
 
 @dataclass
@@ -38,7 +45,8 @@ class MindOutput:
     options: list[Option] = field(default_factory=list)
     confidence: Optional[float] = None
     latency_ms: Optional[float] = None
-    fallback_share: float = 0.0
+    # Share of playable ticks where code, not Jev, chose the target. None unless the controller is jev.
+    fallback_share: Optional[float] = None
     reflex: bool = False
     mark_sector: int = -1
     blocked: frozenset[str] = frozenset()
@@ -47,6 +55,9 @@ class MindOutput:
     body_y_flipped: Optional[bool] = None
     card_line: str = ""
     card_keys: tuple[str, ...] = ()
+    # Same screen, same signature. card_ready is False while a Jev card answer may still change the pick.
+    card_signature: str = ""
+    card_ready: bool = False
     model: str = ""
     events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -70,11 +81,17 @@ class Mind:
         self.rng = random.Random()
         self.commit_id: str | None = None
         self.commit_source = "code"
+        self._jev_at = 0.0
+        self._jev_danger = "clear"
+        self._progress: tuple[str, float, float] | None = None
+        self._shunned: dict[str, float] = {}
         self._ticks = 0
         self._fallback = 0
         self._logged_move: Any = None
         self._logged_card: Any = None
+        self._card_logged: tuple[str, str] | None = None
         self._card_sig = ""
+        self._card_since = 0.0
         self._card_result = None
         self.background: JevBackground | None = None
         self.client = client
@@ -97,14 +114,18 @@ class Mind:
 
         perception = perceive(snapshot, self.memory)
         options = build_options(snapshot, perception) if snapshot_playable(snapshot) else []
+        self._shunned = {ident: until for ident, until in self._shunned.items() if until > now}
+        options = [item for item in options if item.id not in self._shunned]
         by_id = {item.id: item for item in options}
 
         movement = self._movement_result(snapshot, perception, options, now, events)
         play_safe = fresh_play_safe(movement, now)
         accepted = accept_choice(movement, set(by_id), now) if self.controller == "jev" else None
-        self._commit(accepted, by_id, options, snapshot)
+        self._commit(accepted, by_id, options, snapshot, now)
         chosen = by_id.get(self.commit_id or "")
         steer = self.motor.step(snapshot, chosen if snapshot_playable(snapshot) else None, perception, sent_keys, play_safe)
+        if snapshot_playable(snapshot):
+            self._watch_progress(chosen, snapshot, now)
 
         if steer.note == "nudge":
             decider = "nudge"
@@ -115,12 +136,12 @@ class Mind:
         else:
             decider = "code"
 
-        if snapshot_playable(snapshot):
+        if self.controller == "jev" and snapshot_playable(snapshot):
             self._ticks += 1
-            if decider != "jev":
+            if self.commit_source != "jev" or chosen is None:
                 self._fallback += 1
 
-        card_line, card_keys = self._cards(snapshot, now, events)
+        card_line, card_keys, card_signature, card_ready = self._cards(snapshot, now, events)
         heading = steer.command.heading
         mark = SECTOR_NAMES.index(heading) if heading in SECTOR_NAMES else -1
         confidence = movement.confidence if movement is not None and movement.ok else None
@@ -137,7 +158,7 @@ class Mind:
             options=options,
             confidence=confidence,
             latency_ms=latency,
-            fallback_share=(self._fallback / self._ticks) if self._ticks else 0.0,
+            fallback_share=(self._fallback / self._ticks) if self._ticks else None,
             reflex=steer.reflex,
             mark_sector=mark,
             blocked=steer.blocked,
@@ -146,24 +167,48 @@ class Mind:
             body_y_flipped=steer.body_y_flipped,
             card_line=card_line,
             card_keys=card_keys,
+            card_signature=card_signature,
+            card_ready=card_ready,
             model=model,
             events=events,
         )
 
-    def _commit(self, accepted: str | None, by_id: dict[str, Option], options: list[Option], snapshot: GameState) -> None:
+    def _commit(self, accepted: str | None, by_id: dict[str, Option], options: list[Option], snapshot: GameState, now: float) -> None:
         if accepted:
             self.commit_id = accepted
             self.commit_source = "jev"
+            self._jev_at = now
+            self._jev_danger = by_id[accepted].danger
             self.picker.reset()
             return
         held = by_id.get(self.commit_id or "")
-        if self.commit_source == "jev" and held is not None and not _finished(held, snapshot):
+        if (
+            self.commit_source == "jev"
+            and held is not None
+            and not _finished(held, snapshot)
+            and now - self._jev_at <= HOLD_S
+            and DANGER_RANK.get(held.danger, 2) <= DANGER_RANK.get(self._jev_danger, 2)
+        ):
             return
         if self.commit_source == "jev":
             self.picker.reset()
         chosen = self.picker.choose(options)
         self.commit_id = chosen.id if chosen is not None else None
         self.commit_source = "code"
+
+    def _watch_progress(self, chosen: Option | None, snapshot: GameState, now: float) -> None:
+        player = snapshot.player
+        if chosen is None or player is None or chosen.hold or chosen.kind == "open":
+            self._progress = None
+            return
+        dist = math.hypot(chosen.aim_x - player.x, chosen.aim_y - player.y)
+        arrived = dist < 2.0 * ARRIVE
+        if arrived or self._progress is None or self._progress[0] != chosen.id or dist < self._progress[1] - PROGRESS_STEP:
+            self._progress = (chosen.id, dist, now)
+            return
+        if now - self._progress[2] >= NO_PROGRESS_S:
+            self._shunned[chosen.id] = now + SHUN_S
+            self._progress = None
 
     def _movement_result(self, snapshot: GameState, perception, options: list[Option], now: float, events: list[dict]) -> Any:
         if self.controller != "jev" or not options or not snapshot_playable(snapshot):
@@ -180,14 +225,15 @@ class Mind:
             events.append(_jev_event(result, request_state=request.state if self.sync else None))
         return result
 
-    def _cards(self, snapshot: GameState, now: float, events: list[dict]) -> tuple[str, tuple[str, ...]]:
+    def _cards(self, snapshot: GameState, now: float, events: list[dict]) -> tuple[str, tuple[str, ...], str, bool]:
         screen = _screen(snapshot)
         if screen is None or snapshot.player is None:
             self._card_sig = ""
-            return "", ()
-        signature = screen.kind + "|" + ",".join(f"{offer.index}:{offer.type}" for offer in screen.offers)
+            return "", (), "", False
+        signature = screen.kind + "|" + ",".join(f"{offer.index}:{offer.type}:{offer.level}" for offer in screen.offers)
         if signature != self._card_sig:
             self._card_sig = signature
+            self._card_since = now
             self._card_result = None
             if self.cards == "jev" and screen.offers and screen.kind != "chest":
                 request = card_request(snapshot, screen, now, self.rng)
@@ -198,12 +244,13 @@ class Mind:
         jev_choice = None
         jev_confidence = None
         card_result = self._card_result if self.sync else self._latest("card")
-        if card_result is not None and card_result.ok and _same_cards(card_result, screen):
+        answered = card_result is not None and _same_cards(card_result, screen) and card_result.built_mono >= self._card_since
+        if answered and card_result.ok:
             jev_choice = card_result.choice
             jev_confidence = card_result.confidence
-            if card_result is not self._logged_card:
-                self._logged_card = card_result
-                events.append(_jev_event(card_result, request_state=None))
+        if answered and card_result is not self._logged_card:
+            self._logged_card = card_result
+            events.append(_jev_event(card_result, request_state=None))
         decision = decide_cards(
             screen,
             snapshot.player.weapons,
@@ -214,8 +261,19 @@ class Mind:
             jev_confidence=jev_confidence,
         )
         if decision is None:
-            return "", ()
-        if decision is not None and (decision.name, decision.reason) != getattr(self, "_card_logged", None):
+            return "", (), signature, False
+        ready = decision.action == "open_close" or (
+            decision.action == "choose"
+            and (
+                self.cards != "jev"
+                or decision.reason in {"completes an evolution", "jev"}
+                or answered
+                or self.client is None
+                or (self.background is not None and self.background.disabled)
+                or now - self._card_since >= CARD_TIMEOUT_S
+            )
+        )
+        if (decision.name, decision.reason) != self._card_logged:
             self._card_logged = (decision.name, decision.reason)
             events.append(
                 {
@@ -236,7 +294,7 @@ class Mind:
         keys = decision.keys if self.cards != "off" else ()
         if self.cards == "off" and decision.name:
             line = "suggest " + line
-        return line, keys
+        return line, keys, signature, ready and bool(keys)
 
     def _latest(self, kind: str):
         if self.sync and kind == "card":

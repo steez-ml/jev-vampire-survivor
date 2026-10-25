@@ -2,7 +2,7 @@
 
 This is the living half of the project's guidance: architecture, phases, open questions, and a log of decisions. It is expected to change as we learn. The goal, philosophy, and hard boundaries live in [CHARTER.md](CHARTER.md). If a change here would contradict the charter, stop and discuss it first.
 
-**Status (2026-10-24):** the navigator is in the bridge and covered by offline tests. Live play is still `baseline` unless you pass `--controller`. Phase 0's latency numbers, the rate limits, and the pinned model are still blocked on an API key ([open question 1](#open-questions)). Enemy types, HP, and card offers are in the v5 schema and are not read from the game yet ([open questions 4-6](#open-questions)).
+**Status (2026-10-24):** the navigator is in the bridge and covered by offline tests. Live play is still `baseline` unless you pass `--controller`. Phase 0's latency numbers, the rate limits, and the pinned model are still blocked on an API key ([open question 1](#open-questions)). Enemy types, HP, and card offers are in the v5 schema and are not read from the game yet ([open questions 4-6](#open-questions)). Until they are, every live enemy is "toughness unknown", so `code` vs `baseline` is not a fair benchmark yet. See the [PR #1 review](reviews/pr-1-navigator.md).
 
 **How to update this file:** when a phase finishes or a plan changes, update the status line, edit the affected section, and add a dated entry to the [decision log](#decision-log). Do not delete old decisions. Add a new entry that supersedes them.
 
@@ -115,7 +115,14 @@ The state contains player facts (HP band, minute, level, "almost levelled", weap
 - the picked option ID still exists;
 - the confidence clears a threshold (start conservative and tune from logs).
 
-**Commitment.** Once a pick is accepted, the motor stays committed to it until the option is done or gone, or a fresh accepted pick replaces it. A later Jev answer that fails the arbiter does not cancel the current commitment. The code picker steps in only when the commitment ends and no fresh, confident Jev pick is waiting.
+**Commitment.** Once a pick is accepted, the motor stays committed to it until one of these happens:
+
+- the option is done or gone;
+- a fresh accepted pick replaces it;
+- no answer has confirmed it for about 2 seconds;
+- the way there has become more dangerous than when Jev chose it.
+
+A later Jev answer that fails the arbiter does not cancel the current commitment by itself. Any target the bot has stopped closing on for about 1.5 seconds is set aside for a few seconds, whoever picked it, so the motor does not dither in front of something it will not touch. The code picker steps in when the commitment ends and no fresh, confident Jev pick is waiting.
 
 **Code picker (bridge).** A plain weighted rule over the same options' facts: value, route danger, and distance. It is the fallback when Jev is late or unsure, and it is also the "without Jev" arm of every comparison. It re-scores every tick but only switches away from the current option when that option is gone or another is clearly better by a margin, so it does not flip-flop. Today's pilot's ideas (priced contact, openness, kiting) can be reused here.
 
@@ -330,6 +337,18 @@ Done when: one hands-off 30:00 on Mad Forest with any of the four starters, whic
 
 Newest first. Add entries; do not rewrite old ones.
 
+- **2026-10-24: PR #1 review.** The full list is in [reviews/pr-1-navigator.md](reviews/pr-1-navigator.md). Fixed on the branch:
+  - a freeze in front of guarded targets;
+  - route danger that ignored the polar enemy grid;
+  - Jev picks that never expired;
+  - the motor's look-ahead speed;
+  - perception's HP history;
+  - danger wording that claimed unknown enemies were slow to kill;
+  - menu-key double taps;
+  - the fallback share;
+  - the probe's latency and shuffle measurements.
+
+  Phase 2's enemy reads move ahead of the Phase 3 benchmark, because without them every live enemy is unknown and treated as dangerous.
 - **2026-10-24: navigator landed in code, ahead of the live checks.** The bridge now has the Jev client (pinned provisionally to `jev-1.13.0`, no retries, fake client for tests), the run log and summary, `--controller baseline|code|jev`, `--cards off|rules|jev`, perception, options, the code picker, the motor, the arbiter, and card decisions. `TYPESAFE_API_KEY` may be unset: `jev` then uses the code picker. Menu keys default to off. `--menu-keys provisional` is an unverified DOWN/RETURN plan and is not a claim about 1.16.107.
   - The mod publishes schema v5. The only new live read is `xp_piles`, clustered from the gem read that already existed. Enemy type, HP, card offers, evolutions, and weapon area are in the schema and parsed, and are not read, because the owning members were not confirmed.
   - `jev/` was removed. Its note (call Jev from the bridge, key in the environment) is this roadmap.

@@ -18,7 +18,7 @@ from .memory import MotionTracker, WallMemory
 from .options import APPROACH, AURA, ESCAPE, STRIKE, WALK, Option
 from .perception import Body, Perception
 from .polar import HEADINGS, SECTOR_NAMES, heading_unit, sector_index
-from .policy import NUDGE_HEADINGS, Command
+from .policy import DEFAULT_SPEED_R0_PER_S, NUDGE_HEADINGS, Command
 from .snapshot import GameState
 
 HORIZON_S = 0.3
@@ -164,7 +164,7 @@ def _blocks(body: Body, allow_killable: bool) -> bool:
 
 def _future(px: float, py: float, speed: float, index: int) -> tuple[float, float]:
     hx, hy = heading_unit(index)
-    step = (speed if speed > 0.2 else 3.0) * HORIZON_S
+    step = max(0.0, speed) * HORIZON_S
     return px + hx * step, py + hy * step
 
 
@@ -229,10 +229,12 @@ class Motor:
         if int(t) % 5 == 0:
             self.memory.prune(t)
         bosses = [(boss.x, boss.y) for boss in snapshot.bosses]
+        # The unit of player.speed (CharacterController.Speed) is unconfirmed; walked distance per second is not.
+        speed = self.tracker.free_speed if self.tracker.free_speed > 1e-6 else DEFAULT_SPEED_R0_PER_S * r0
         index, reflex = choose_heading(
             player.x,
             player.y,
-            player.speed,
+            speed,
             option,
             perception.bodies,
             veto,

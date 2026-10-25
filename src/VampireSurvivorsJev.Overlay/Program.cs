@@ -307,16 +307,9 @@ internal sealed class OverlayForm : Form
         }
 
         var y = 212;
-        var shown = 0;
         using var pickBrush = new SolidBrush(Color.FromArgb(236, 208, 156));
-        for (var i = 0; i < _opts.Length && shown < 4; i++)
+        foreach (var row in VisibleOptions(4))
         {
-            var row = _opts[i];
-            if (string.IsNullOrEmpty(row))
-            {
-                continue;
-            }
-
             var split = row.IndexOf('|');
             var id = split > 0 ? row.Substring(0, split) : row;
             var facts = split > 0 ? row.Substring(split + 1) : row;
@@ -329,7 +322,6 @@ internal sealed class OverlayForm : Form
             var text = facts.Length > 58 ? facts.Substring(0, 57) + "..." : facts;
             g.DrawString(text, _labelFont, picked ? number : muted, 24, y);
             y += 17;
-            shown++;
         }
 
         if (!string.IsNullOrEmpty(_card))
@@ -343,6 +335,40 @@ internal sealed class OverlayForm : Form
         {
             g.DrawString(detail, _labelFont, muted, 16, 306);
         }
+    }
+
+    /// <summary>The first rows that fit, with the picked option swapped in when it would fall off the end.</summary>
+    private List<string> VisibleOptions(int max)
+    {
+        var rows = new List<string>();
+        string pickedRow = null;
+        foreach (var row in _opts)
+        {
+            if (string.IsNullOrEmpty(row))
+            {
+                continue;
+            }
+
+            if (_picked.Length > 0 && row.StartsWith(_picked + "|", StringComparison.Ordinal))
+            {
+                pickedRow = row;
+            }
+
+            rows.Add(row);
+        }
+
+        if (rows.Count <= max)
+        {
+            return rows;
+        }
+
+        var shown = rows.GetRange(0, max);
+        if (pickedRow != null && !shown.Contains(pickedRow))
+        {
+            shown[max - 1] = pickedRow;
+        }
+
+        return shown;
     }
 
     private static Color DeciderColor(string who)

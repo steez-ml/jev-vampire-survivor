@@ -110,6 +110,10 @@ class JevBackground:
         with self._lock:
             return self.card if kind == "card" else self.movement
 
+    @property
+    def disabled(self) -> bool:
+        return bool(self._disabled)
+
     def close(self) -> None:
         self._stop.set()
         thread = self._thread
@@ -164,6 +168,12 @@ class JevBackground:
                 remain = self.interval_s - (time.monotonic() - started)
                 if remain > 0:
                     await asyncio.sleep(remain)
+        close = getattr(self.client, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:
+                pass
 
     def _take(self) -> JevRequest | None:
         with self._lock:
