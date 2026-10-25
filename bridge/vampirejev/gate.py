@@ -42,6 +42,22 @@ def physical_wasd_down() -> frozenset[str]:
     return frozenset(name for name, vk in VK_WASD.items() if key_down(vk))
 
 
+def human_disarms(
+    snapshot: Optional[GameState],
+    command_keys: frozenset[str],
+    physical: Optional[frozenset[str]] = None,
+    ours: Optional[frozenset[str]] = None,
+) -> bool:
+    """Player WASD disarms only while movement belongs to the bot.
+
+    A level-up or pause is a card screen. Keys there are not a takeover, so an
+    assisted run stays armed while the owner picks a card by hand.
+    """
+    if not snapshot_playable(snapshot):
+        return False
+    return user_wasd_override(command_keys, physical, ours)
+
+
 def user_wasd_override(
     command_keys: frozenset[str],
     physical: Optional[frozenset[str]] = None,

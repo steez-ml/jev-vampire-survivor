@@ -1,26 +1,12 @@
 ---
-description: Project rules for the Vampire Survivors and Jev starter project
-globs:
-  - "**/*"
+description: Project rules for the Vampire Survivors and Jev project
 alwaysApply: true
 ---
 
 # Vampire Survivors + Jev project
 
-The owner is an experienced data engineer who is new to C# game modding, Unity, and IL2CPP. Explain unfamiliar concepts before using them and prefer small, verifiable changes.
+Before planning or changing anything, read `docs/CHARTER.md` (goal, philosophy, hard boundaries) and `docs/ROADMAP.md` (current phase, architecture, open questions, decision log). `AGENTS.md` at the repo root holds the hard rules and the loader lessons; follow it.
 
-The current milestone is v1 polar pilot:
+The owner is an experienced data engineer who is new to C#, Unity, IL2CPP, and game modding. Explain unfamiliar concepts in plain language before using them, and prefer small, verifiable changes.
 
-- load through BepInEx 6 IL2CPP (`winhttp.dll`); keep MelonLoader's `version.dll` disabled — it crashes this Unity 6 install in coreclr.dll;
-- `UnityLogListening = false`; never retry Unity `AddComponent`;
-- Harmony postfix on existing `GameManager.Update` publishes game-state v4 over UDP 127.0.0.1 (source `bepinex`): 3×8 polar occupancy for enemies, XP and walls (`PhaserTilemap.IsTileAtPosition`), inner-ring enemies with velocity, bosses, chests, player level/XP/magnet/facing/weapons and Phaser body blocked sides; v4 is additive over v3 and every new field is optional;
-- every new game read is isolated in its own try/catch, logs once to `debug-*.log`, and disables itself for the session; heavier probes have `Telemetry.ProbeWalls` / `Telemetry.ProbeWeapons` config switches;
-- compact overlay HUD shows Hello world, player x,y/HP, level and XP %, weapons, hottest XP sector, inner enemy count, seq Hz, paused/level-up, and the pilot's mode and blocked sides;
-- on-game field overlay is a WinForms layer (not Unity AddComponent): player at the center, rings scaled to the camera view, wall cells in grey, blocked sides in red;
-- the Python pilot (`bridge/vampirejev/pilot.py` + `policy.py`) owns memory (displacement stuck detector, wall memory, body-flag calibration, mode/heading hysteresis) and the 8-way scoring (priced contact, phase dial, openness, kiting, wall costs, weapon aim classes, farm/kite/flee/chest modes), WASD SendInput, and arm/focus/pause gates; tap Ctrl to arm; `VSJEV_NUDGE` and `--mode` still override;
-- weapon knowledge stops at aim class (facing / movement / auto), keyed by `WeaponType` enum names; no DPS estimation, no destructibles, no Jev in this pass;
-- policy changes need a `sim.py` scenario or a `test_policy.py` case; `python -m vampirejev.replay` re-runs JSONL recordings offline;
-- do not call Jev from the in-game DLL;
-- do not add API keys or network calls beyond localhost UDP.
-
-Do not guess Vampire Survivors internal classes or fields. First inspect the generated assemblies from the user's installation and record evidence. Keep game-specific adapters separate from normalized telemetry contracts. Put future Jev calls in the external bridge, where credentials and policy can be managed safely.
+If a change would contradict the charter, stop and ask the owner. When a roadmap plan changes, update the roadmap and add a decision-log entry.

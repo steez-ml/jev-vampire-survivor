@@ -40,7 +40,7 @@ internal static class PolarPainter
     public const int Sectors = 8;
     public const int Cells = Rings * Sectors;
 
-    public static void Draw(Graphics g, Rectangle bounds, float[] enemy, float[] xp, float[] radii, bool fill, float[] wall = null, string blocked = "")
+    public static void Draw(Graphics g, Rectangle bounds, float[] enemy, float[] xp, float[] radii, bool fill, float[] wall = null, string blocked = "", int markSector = -1)
     {
         _ = radii;
         if (bounds.Width < 16 || bounds.Height < 16)
@@ -52,10 +52,10 @@ internal static class PolarPainter
         var outerPx = Math.Min(bounds.Width, bounds.Height) * 0.48f;
         var ringPx = new[] { 0f, outerPx * 0.34f, outerPx * 0.67f, outerPx };
         var style = fill ? PolarStyle.Panel : new PolarStyle(false, false, 0, 0, 0, 200, 1.4f);
-        DrawRings(g, center, ringPx, enemy, xp, style, wall, blocked);
+        DrawRings(g, center, ringPx, enemy, xp, style, wall, blocked, markSector);
     }
 
-    public static void DrawRings(Graphics g, PointF center, float[] ringPx, float[] enemy, float[] xp, PolarStyle style, float[] wall = null, string blocked = "")
+    public static void DrawRings(Graphics g, PointF center, float[] ringPx, float[] enemy, float[] xp, PolarStyle style, float[] wall = null, string blocked = "", int markSector = -1)
     {
         if (ringPx == null || ringPx.Length < 4 || ringPx[3] < 8f)
         {
@@ -195,6 +195,16 @@ internal static class PolarPainter
             var x = center.X + (float)(Math.Cos(deg) * ringPx[3]);
             var y = center.Y + (float)(Math.Sin(deg) * ringPx[3]);
             g.DrawLine(linePen, center.X, center.Y, x, y);
+        }
+
+        if (markSector >= 0 && markSector < Sectors && ringPx[3] > 12f)
+        {
+            var start = northCenter - sweep * 0.5f + markSector * sweep;
+            using var path = AnnularSector(center, ringPx[2], ringPx[3], start, sweep);
+            using var brush = new SolidBrush(Color.FromArgb(90, 236, 208, 156));
+            using var pen = new Pen(Color.FromArgb(220, 236, 208, 156), Math.Max(1.5f, ringPx[3] * 0.012f));
+            g.FillPath(brush, path);
+            g.DrawPath(pen, path);
         }
     }
 

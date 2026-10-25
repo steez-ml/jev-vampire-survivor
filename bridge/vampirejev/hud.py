@@ -19,18 +19,39 @@ def write_overlay_input(
     why: str = "",
     mode: str = "",
     blocked: str = "",
+    mind: dict[str, str] | None = None,
 ) -> None:
     global _last, _last_write
-    text = (
-        f"armed={'1' if armed else '0'}\n"
-        f"keys={''.join(sorted(keys))}\n"
-        f"heading={heading or '—'}\n"
-        f"focused={'1' if focused else '0'}\n"
-        f"why={why}\n"
-        f"mode={mode}\n"
-        f"blocked={blocked}\n"
-        f"loop=1\n"
-    )
+    lines = [
+        f"armed={'1' if armed else '0'}",
+        f"keys={''.join(sorted(keys))}",
+        f"heading={heading or '-'}",
+        f"focused={'1' if focused else '0'}",
+        f"why={why}",
+        f"mode={mode}",
+        f"blocked={blocked}",
+        "loop=1",
+    ]
+    if mind:
+        for key in (
+            "controller",
+            "decider",
+            "confidence",
+            "latency_ms",
+            "fallback",
+            "stance",
+            "option",
+            "mark",
+            "card",
+            "model",
+        ):
+            if key in mind:
+                lines.append(f"{key}={mind[key]}")
+        for index in range(8):
+            slot = f"opt{index}"
+            if slot in mind:
+                lines.append(f"{slot}={mind[slot]}")
+    text = "\n".join(lines) + "\n"
     now = time.monotonic()
     if text == _last and now - _last_write < 0.4:
         return
@@ -43,4 +64,4 @@ def write_overlay_input(
 
 
 def clear_overlay_input() -> None:
-    write_overlay_input(False, frozenset(), "—", False)
+    write_overlay_input(False, frozenset(), "-", False)

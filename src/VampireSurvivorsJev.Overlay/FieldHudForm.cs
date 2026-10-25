@@ -15,6 +15,7 @@ internal sealed class FieldHudForm : Form
     private readonly float[] _wall = new float[PolarPainter.Cells];
     private bool _hasWall;
     private string _blocked = "";
+    private int _mark = -1;
     private bool _inRun;
     private bool _visibleField;
     private bool _hasCam;
@@ -65,7 +66,8 @@ internal sealed class FieldHudForm : Form
         float camR2Px,
         float[] wall = null,
         bool hasWall = false,
-        string blocked = "")
+        string blocked = "",
+        int markSector = -1)
     {
         _inRun = inRun;
         _hasWall = hasWall && wall != null;
@@ -75,6 +77,7 @@ internal sealed class FieldHudForm : Form
         }
 
         _blocked = blocked ?? "";
+        _mark = markSector;
         _hasCam = hasCam;
         _camSx = camSx;
         _camSy = camSy;
@@ -148,7 +151,7 @@ internal sealed class FieldHudForm : Form
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
-                PolarPainter.DrawRings(g, FieldCenter(), FieldRings(), _enemy, _xp, PolarStyle.Field, _hasWall ? _wall : null, _blocked);
+                PolarPainter.DrawRings(g, FieldCenter(), FieldRings(), _enemy, _xp, PolarStyle.Field, _hasWall ? _wall : null, _blocked, _mark);
             }
         }
 

@@ -11,6 +11,8 @@ SCHEMA_PATH = ROOT / "contracts" / "game-state.v3.schema.json"
 EXAMPLE_PATH = ROOT / "contracts" / "game-state.v3.example.json"
 SCHEMA_V4_PATH = ROOT / "contracts" / "game-state.v4.schema.json"
 EXAMPLE_V4_PATH = ROOT / "contracts" / "game-state.v4.example.json"
+SCHEMA_V5_PATH = ROOT / "contracts" / "game-state.v5.schema.json"
+EXAMPLE_V5_PATH = ROOT / "contracts" / "game-state.v5.example.json"
 
 
 def _validate(instance: object, schema: dict, defs: dict | None = None) -> None:
@@ -124,6 +126,34 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(snapshot.destructibles[0].type, "BRAZIER")
         self.assertEqual(snapshot.counts.pickups_published, 1)
         self.assertEqual(snapshot.counts.destructibles_published, 1)
+
+    def test_v5_example_matches_schema_and_parses(self) -> None:
+        schema = json.loads(SCHEMA_V5_PATH.read_text(encoding="utf-8"))
+        example = json.loads(EXAMPLE_V5_PATH.read_text(encoding="utf-8"))
+        _validate(example, schema)
+        snapshot = GameState.from_json(EXAMPLE_V5_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot.schema_version, 5)
+        self.assertEqual(snapshot.enemies[0].type, "BAT1")
+        self.assertEqual(snapshot.enemies[0].uid, "e1")
+        self.assertAlmostEqual(snapshot.enemies[0].hp or 0, 6)
+        self.assertEqual(snapshot.xp_piles[0].value, 40)
+        self.assertEqual(snapshot.enemy_catalog[1].type, "MUDMAN2")
+        self.assertEqual(snapshot.enemy_sectors[0].count, 12)
+        assert snapshot.card_screen is not None
+        self.assertEqual(snapshot.card_screen.kind, "level_up")
+        self.assertEqual(snapshot.card_screen.offers[1].type, "PASSIVE_EXAMPLE")
+        self.assertEqual(snapshot.evolutions[0].result, "VAMPIRICA")
+        self.assertEqual(snapshot.player.passives[0].type, "PASSIVE_EXAMPLE")
+        self.assertAlmostEqual(snapshot.player.weapons[0].area or 0, 1.5)
+
+    def test_v4_shape_is_valid_v5_without_new_fields(self) -> None:
+        schema = json.loads(SCHEMA_V5_PATH.read_text(encoding="utf-8"))
+        example = json.loads(EXAMPLE_V4_PATH.read_text(encoding="utf-8"))
+        example["schema_version"] = 5
+        _validate(example, schema)
+        snapshot = GameState.from_dict(example)
+        self.assertEqual(snapshot.xp_piles, [])
+        self.assertIsNone(snapshot.card_screen)
 
 
 if __name__ == "__main__":

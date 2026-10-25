@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from vampirejev.gate import should_send, snapshot_playable, user_wasd_override
+from vampirejev.gate import human_disarms, should_send, snapshot_playable, user_wasd_override
 from vampirejev.snapshot import GameState, RunState
 from vampirejev.wasd import WasdDriver, heading_to_keys
 
@@ -46,7 +46,11 @@ class GateTests(unittest.TestCase):
         self.assertEqual(driver.down, frozenset())
         self.assertIn(("W", False), sent)
 
-    def test_user_wasd_override_disarms(self) -> None:
+    def test_level_up_wasd_does_not_disarm(self) -> None:
+        wanted = heading_to_keys(0.0, 0.0)
+        level_up = _state(level_up=True)
+        self.assertFalse(human_disarms(level_up, wanted, frozenset({"W"})))
+        self.assertTrue(human_disarms(_state(), wanted, frozenset({"W"})))
         wanted = heading_to_keys(0.0, 0.0)
         self.assertTrue(user_wasd_override(wanted, frozenset({"W"})))
         self.assertFalse(user_wasd_override(frozenset({"W"}), frozenset({"W"})))

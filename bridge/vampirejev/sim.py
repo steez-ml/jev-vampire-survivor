@@ -16,7 +16,20 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from .polar import CELLS, SECTORS, cell_index, sector_index
-from .snapshot import Bounds, Counts, Entity, GameState, Perf, PlayerState, Polar, RunState, TypedPin, WeaponState
+from .snapshot import (
+    Bounds,
+    Counts,
+    EnemyStats,
+    Entity,
+    GameState,
+    Perf,
+    PlayerState,
+    Polar,
+    RunState,
+    TypedPin,
+    WeaponState,
+    XpPile,
+)
 
 PLAYER_RADIUS = 0.4
 DEFAULT_RADII = (3.0, 8.0, 20.0)
@@ -41,6 +54,10 @@ class SimEnemy:
     boss: bool = False
     vx: float = 0.0
     vy: float = 0.0
+    type: str = ""
+    hp: float = 0.0
+    hp_max: float = 0.0
+    uid: str = ""
 
 
 @dataclass
@@ -74,6 +91,7 @@ class World:
     xp: float = 0.0
     xp_next: float = 20.0
     weapons: list[WeaponState] = field(default_factory=list)
+    catalog: list[EnemyStats] = field(default_factory=list)
     wall_channel: bool = False
     body_flags: bool = False
     facing_x: int = 1
@@ -177,9 +195,23 @@ class World:
             enemy_bins[cell_index(dx, dy, self.radii)] += 1.0
             dist2 = dx * dx + dy * dy
             if enemy.boss:
-                bosses.append(Entity(enemy.x, enemy.y))
+                bosses.append(Entity(enemy.x, enemy.y, type=enemy.type, hp=enemy.hp or None, hp_max=enemy.hp_max or None, uid=enemy.uid))
             if dist2 < r0 * r0:
-                pins.append((dist2, Entity(enemy.x, enemy.y, enemy.vx, enemy.vy)))
+                pins.append(
+                    (
+                        dist2,
+                        Entity(
+                            enemy.x,
+                            enemy.y,
+                            enemy.vx,
+                            enemy.vy,
+                            enemy.type,
+                            enemy.hp or None,
+                            enemy.hp_max or None,
+                            enemy.uid,
+                        ),
+                    )
+                )
         pins.sort(key=lambda item: item[0])
         for gem in self.gems:
             xp_bins[cell_index(gem.x - self.x, gem.y - self.y, self.radii)] += gem.value
@@ -213,6 +245,8 @@ class World:
             chests=[Entity(x, y) for x, y in self.chests[:8]],
             pickups=list(self.pickups[:8]),
             destructibles=list(self.destructibles[:8]),
+            xp_piles=_cluster_gems(self.gems),
+            enemy_catalog=list(self.catalog),
             counts=Counts(
                 enemies_stage=max(self.enemies_stage, len(self.enemies)),
                 enemies_published=min(8, len(pins)),
@@ -229,6 +263,25 @@ class World:
             ),
             perf=Perf(),
         )
+
+
+def _cluster_gems(gems: list[SimGem], radius: float = 2.5) -> list[XpPile]:
+    piles: list[XpPile] = []
+    for gem in gems:
+        placed = False
+        for pile in piles:
+            if math.hypot(pile.x - gem.x, pile.y - gem.y) <= radius:
+                total = pile.value + gem.value
+                if total > 0:
+                    pile.x = (pile.x * pile.value + gem.x * gem.value) / total
+                    pile.y = (pile.y * pile.value + gem.y * gem.value) / total
+                pile.value = total
+                placed = True
+                break
+        if not placed:
+            piles.append(XpPile(gem.x, gem.y, gem.value))
+    piles.sort(key=lambda pile: -pile.value)
+    return piles[:8]
 
 
 def probe_walls(px: float, py: float, radii: tuple[float, float, float], wall_at) -> list[float]:
@@ -309,6 +362,115 @@ def altar(hp: float = 20.0, guards: int = 0) -> World:
     return world
 
 
+def run_mind(world: World, seconds: float, dt: float = 0.05, controller: str = "code", trace: bool = False):
+    """Drive the world with the new motor. Returns (mind, rows)."""
+    from .mind import Mind
+    from .wasd import heading_to_keys
+
+    mind = Mind(controller=controller, sync=True)
+    keys: frozenset[str] = frozenset()
+    rows = []
+    steps = int(round(seconds / dt))
+    try:
+        for i in range(steps):
+            snapshot = world.snapshot()
+            out = mind.step(snapshot, keys, i * dt)
+            keys = heading_to_keys(out.command.dx, out.command.dy)
+            rows.append((world.survived, world.x, world.y, world.hp, out.command.heading, out.decider, out.option_id))
+            if trace and i % int(round(0.25 / dt)) == 0:
+                t, x, y, hp, heading, decider, option = rows[-1]
+                print(f"t={t:6.2f} x={x:7.2f} y={y:6.2f} hp={hp:5.1f} heading={heading:<2} {decider:<6} {option}")
+            world.step(keys, dt)
+    finally:
+        mind.close()
+    return mind, rows
+
+
+def _stage(**kwargs) -> World:
+    """Mad Forest sized rings, plus a tiny enemy table so frail and tanky are different."""
+    world = World(radii=(6.0, 16.0, 40.0), magnet=1.2, **kwargs)
+    world.catalog = [EnemyStats("BAT", 8, 1.5), EnemyStats("TANK", 500, 0.8)]
+    return world
+
+
+def open_gem() -> World:
+    """An unguarded gem pile two steps to the east."""
+    world = _stage()
+    world.gems.append(SimGem(2.2, 0.0, 12))
+    return world
+
+
+def clear_xp() -> World:
+    """Low HP, a blob to the south, and a gem pile sitting in the clear to the east."""
+    world = _stage(hp=20, survived=40, enemies_stage=12)
+    world.gems.append(SimGem(5.0, 0.4, 30))
+    for i in range(4):
+        world.enemies.append(SimEnemy(-0.4 + 0.3 * i, -3.2, speed=0.6, type="TANK", hp=500, hp_max=500, uid=f"tank{i}"))
+    return world
+
+
+def forest_line(heavy: bool = False) -> World:
+    """Typed Mad Forest enemies and no catalog, which is what a live snapshot will look like.
+
+    BAT1 is frail on the wiki table. MUDMAN2 is tanky. Neither number comes from a catalog.
+    """
+    world = World(radii=(6.0, 16.0, 40.0), magnet=1.2, weapons=[WeaponState("WHIP", 2)])
+    world.gems.append(SimGem(8.0, 0.0, 40))
+    if heavy:
+        world.enemies.append(SimEnemy(3.0, 0.0, speed=0.0, type="MUDMAN2"))
+    else:
+        for i in range(3):
+            world.enemies.append(SimEnemy(2.4 + 0.7 * i, 0.3 - 0.3 * i, speed=0.0, type="BAT1"))
+    return world
+
+
+def whip_line(heavy: bool = False) -> World:
+    """Gems to the east. A line of bats on the way, or one tank in that same spot."""
+    world = _stage(weapons=[WeaponState("WHIP", 2)])
+    world.gems.append(SimGem(8.0, 0.0, 40))
+    if heavy:
+        world.enemies.append(SimEnemy(3.0, 0.0, speed=0.0, type="TANK", hp=500, hp_max=500, uid="tank"))
+    else:
+        for i in range(3):
+            world.enemies.append(SimEnemy(2.4 + 0.7 * i, 0.3 - 0.3 * i, speed=0.0, type="BAT", hp=8, hp_max=8, uid=f"bat{i}"))
+    return world
+
+
+def garlic_swarm(boss: bool = False) -> World:
+    """Bats held at garlic range, or a boss in the same place, which is not a place to stand."""
+    world = _stage(weapons=[WeaponState("GARLIC", 2)])
+    if boss:
+        world.enemies.append(SimEnemy(3.2, 0.0, speed=0.0, boss=True, type="BOSS", hp=1000, hp_max=1000, uid="boss"))
+    else:
+        for i in range(6):
+            world.enemies.append(
+                SimEnemy(3.6 + (i % 3) * 0.6, -0.8 + (i // 3) * 1.6, speed=0.0, type="BAT", hp=8, hp_max=8, uid=f"bat{i}")
+            )
+    return world
+
+
+def horde_gem() -> World:
+    """What live snapshots look like today: no enemy types, no catalog. A far pile sits behind a crowd
+    in the middle ring, past the few bodies the snapshot lists, so only the polar bins see it."""
+    world = World(radii=(6.0, 16.0, 40.0), magnet=1.2, enemies_stage=40, survived=120.0)
+    world.gems.append(SimGem(24.0, 0.0, 40))
+    for i in range(12):
+        world.enemies.append(SimEnemy(10.0 + (i % 4) * 0.8, -1.2 + (i // 4) * 1.2, speed=0.0))
+    return world
+
+
+def low_chicken() -> World:
+    world = _stage(hp=20, survived=50, enemies_stage=8)
+    world.pickups.append(TypedPin("ROAST", 4.5, 0.0))
+    return world
+
+
+def low_brazier() -> World:
+    world = _stage(hp=20, survived=50, enemies_stage=8)
+    world.destructibles.append(TypedPin("BRAZIER", 4.5, 0.0))
+    return world
+
+
 def run(world: World, seconds: float, dt: float = 0.05, mode_lock: Optional[str] = None, trace: bool = False):
     """Drive the world with a Pilot. Returns (pilot, trace rows)."""
     from .pilot import Pilot
@@ -345,10 +507,36 @@ def main(argv: list[str] | None = None) -> int:
     elif scenario == "altar":
         world = altar(hp=20.0, guards=3 if "--guards" in args else 0)
         seconds = 4.0
+        pilot, _rows = run(world, seconds, trace=True)
+        print(
+            f"done: x={world.x:.2f} y={world.y:.2f} hp={world.hp:.1f} collected={world.collected:.0f} "
+            f"healed={world.healed:.1f} stuck_events={pilot.tracker.events} walls_remembered={len(pilot.memory)}"
+        )
+        return 0
+    elif scenario in {"open-gem", "clear-xp", "whip", "whip-heavy", "garlic", "garlic-boss", "chicken", "brazier", "horde", "guarded"}:
+        world = {
+            "open-gem": open_gem,
+            "clear-xp": clear_xp,
+            "whip": whip_line,
+            "whip-heavy": lambda: whip_line(True),
+            "garlic": garlic_swarm,
+            "garlic-boss": lambda: garlic_swarm(True),
+            "chicken": low_chicken,
+            "brazier": low_brazier,
+            "horde": horde_gem,
+            "guarded": pile,
+        }[scenario]()
+        _mind, _rows = run_mind(world, 3.0, trace=True)
+        print(f"done: x={world.x:.2f} y={world.y:.2f} hp={world.hp:.1f} collected={world.collected:.0f} healed={world.healed:.1f}")
+        return 0
     else:
-        print("scenarios: corridor [--walls] [--body], pile [--lowhp], roast [--guards], altar [--guards]", file=sys.stderr)
+        print(
+            "scenarios: corridor [--walls] [--body], pile [--lowhp], roast [--guards], altar [--guards], "
+            "open-gem, clear-xp, whip, whip-heavy, garlic, garlic-boss, chicken, brazier, horde, guarded",
+            file=sys.stderr,
+        )
         return 2
-    pilot, rows = run(world, seconds, trace=True)
+    pilot, _rows = run(world, seconds, trace=True)
     print(
         f"done: x={world.x:.2f} y={world.y:.2f} hp={world.hp:.1f} collected={world.collected:.0f} "
         f"healed={world.healed:.1f} stuck_events={pilot.tracker.events} walls_remembered={len(pilot.memory)}"

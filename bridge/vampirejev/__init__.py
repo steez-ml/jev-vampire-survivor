@@ -1,1 +1,1 @@
-"""Observation loop package. Policy is a stub; WASD and gates are real."""
+"""The bridge: receive snapshots, decide, and send gated keys."""
