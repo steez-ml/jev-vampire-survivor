@@ -1,0 +1,142 @@
+{
+  "schema_version": 5,
+  "seq": 42,
+  "t_ms": 1726700000123,
+  "source": "bepinex",
+  "run": {
+    "running": true,
+    "paused": false,
+    "level_up": true,
+    "survived_seconds": 18.5
+  },
+  "player": {
+    "x": 12.25,
+    "y": -4.5,
+    "hp": 88,
+    "hp_max": 100,
+    "speed": 1.2,
+    "radius": 0.4,
+    "level": 3,
+    "xp": 14,
+    "xp_next": 20,
+    "magnet": 2.6,
+    "facing_x": 1,
+    "move_dir": [1, 0],
+    "blocked": ["up"],
+    "weapons": [
+      { "type": "WHIP", "level": 2, "evo": false, "area": 1.5 },
+      { "type": "MAGIC_MISSILE", "level": 1, "evo": false }
+    ],
+    "passives": [
+      { "type": "PASSIVE_EXAMPLE", "level": 1 }
+    ]
+  },
+  "bounds": {
+    "x": -100,
+    "y": -80,
+    "w": 200,
+    "h": 160
+  },
+  "polar": {
+    "rings": 3,
+    "sectors": 8,
+    "radii": [6, 16, 40],
+    "enemy": [1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0],
+    "xp": [0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0],
+    "wall": [1, 0.5, 0, 0, 0, 0, 0, 0.5, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1]
+  },
+  "enemies": [
+    {
+      "x": 12.25,
+      "y": -1.5,
+      "vx": 0,
+      "vy": -0.4,
+      "type": "BAT",
+      "hp": 6,
+      "hp_max": 8,
+      "id": "e1"
+    }
+  ],
+  "bosses": [
+    {
+      "x": 30,
+      "y": 8
+    }
+  ],
+  "chests": [
+    {
+      "x": 40,
+      "y": -4
+    }
+  ],
+  "pickups": [
+    {
+      "type": "ROAST",
+      "x": 18,
+      "y": -2
+    }
+  ],
+  "destructibles": [
+    {
+      "type": "BRAZIER",
+      "x": 8,
+      "y": 6
+    }
+  ],
+  "xp_piles": [
+    { "x": 20, "y": -4, "value": 40 }
+  ],
+  "enemy_catalog": [
+    { "type": "BAT", "hp_max": 8, "speed": 1.4 },
+    { "type": "TANK", "hp_max": 400, "speed": 0.6 }
+  ],
+  "enemy_sectors": [
+    { "sector": 2, "type": "BAT", "count": 12 }
+  ],
+  "card_screen": {
+    "kind": "level_up",
+    "offers": [
+      {
+        "index": 0,
+        "name": "Whip",
+        "kind": "weapon",
+        "type": "WHIP",
+        "level": 3,
+        "is_new": false,
+        "description": "Hits the side you face."
+      },
+      {
+        "index": 1,
+        "name": "Example passive",
+        "kind": "passive",
+        "type": "PASSIVE_EXAMPLE",
+        "level": 2,
+        "is_new": false,
+        "description": "Placeholder. Live text comes from the game."
+      }
+    ],
+    "rerolls": 0,
+    "skips": 0,
+    "banishes": 0
+  },
+  "evolutions": [
+    { "weapon": "WHIP", "passive": "PASSIVE_EXAMPLE", "result": "VAMPIRICA" }
+  ],
+  "counts": {
+    "enemies_stage": 40,
+    "enemies_published": 1,
+    "gems_stage": 9,
+    "gems_published": 9,
+    "chests_stage": 1,
+    "chests_published": 1,
+    "bosses_published": 1,
+    "tilemaps": 2,
+    "pickups_stage": 1,
+    "pickups_published": 1,
+    "destructibles_stage": 3,
+    "destructibles_published": 1
+  },
+  "perf": {
+    "probe_us": 140
+  }
+}

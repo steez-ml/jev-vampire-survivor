@@ -1,7 +1,6 @@
-"""Normalized game-state dataclasses (v3 + optional v4 fields).
+"""Normalized game-state dataclasses (v3, optional v4, optional v5).
 
-Every v4 addition defaults to "unknown" so a v3 producer still parses and the
-policy degrades to the v0 behaviour instead of failing.
+Every newer field defaults to "unknown" so an older producer still parses.
 """
 
 from __future__ import annotations
@@ -26,6 +25,9 @@ class WeaponState:
     type: str = ""
     level: int = 0
     evo: bool = False
+    # v5. None means this producer did not publish the live weapon shape.
+    area: Optional[float] = None
+    amount: Optional[int] = None
 
 
 @dataclass
@@ -46,6 +48,7 @@ class PlayerState:
     blocked: frozenset[str] = frozenset()
     has_blocked: bool = False
     weapons: list[WeaponState] = field(default_factory=list)
+    passives: list["PassiveState"] = field(default_factory=list)
 
     @property
     def xp_frac(self) -> float:
@@ -68,6 +71,11 @@ class Entity:
     y: float = 0.0
     vx: float = 0.0
     vy: float = 0.0
+    # v5. Empty / None means the producer did not publish it.
+    type: str = ""
+    hp: Optional[float] = None
+    hp_max: Optional[float] = None
+    uid: str = ""
 
 
 @dataclass
@@ -75,6 +83,68 @@ class TypedPin:
     type: str = ""
     x: float = 0.0
     y: float = 0.0
+
+
+@dataclass
+class XpPile:
+    """A gem cluster in world space. The option builder's stable id comes from this, not from the polar bins."""
+
+    x: float = 0.0
+    y: float = 0.0
+    value: float = 0.0
+
+
+@dataclass
+class EnemyStats:
+    """One row of the stage's enemy table: max HP and speed, not our estimate of damage."""
+
+    type: str = ""
+    hp_max: float = 0.0
+    speed: float = 0.0
+
+
+@dataclass
+class SectorCount:
+    """How many of one enemy type sit in one compass sector. Sector 0 is north."""
+
+    sector: int = 0
+    type: str = ""
+    count: int = 0
+
+
+@dataclass
+class PassiveState:
+    type: str = ""
+    level: int = 0
+
+
+@dataclass
+class CardOffer:
+    index: int = 0
+    name: str = ""
+    kind: str = ""
+    type: str = ""
+    level: int = 0
+    is_new: bool = False
+    description: str = ""
+
+
+@dataclass
+class EvolutionPair:
+    weapon: str = ""
+    passive: str = ""
+    result: str = ""
+
+
+@dataclass
+class CardScreen:
+    """A paused in-run choice. kind is level_up, chest, or arcana."""
+
+    kind: str = ""
+    offers: list[CardOffer] = field(default_factory=list)
+    rerolls: Optional[int] = None
+    skips: Optional[int] = None
+    banishes: Optional[int] = None
 
 
 @dataclass
@@ -126,6 +196,12 @@ class GameState:
     destructibles: list[TypedPin] = field(default_factory=list)
     counts: Counts = field(default_factory=Counts)
     perf: Perf = field(default_factory=Perf)
+    # v5. Empty / None means a v3 or v4 producer, or a v5 read that did not fire.
+    xp_piles: list[XpPile] = field(default_factory=list)
+    enemy_catalog: list[EnemyStats] = field(default_factory=list)
+    enemy_sectors: list[SectorCount] = field(default_factory=list)
+    card_screen: Optional[CardScreen] = None
+    evolutions: list[EvolutionPair] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GameState":
@@ -175,6 +251,11 @@ class GameState:
             chests=[_entity(item, velocity=False) for item in data.get("chests") or []],
             pickups=[_typed(item) for item in data.get("pickups") or []],
             destructibles=[_typed(item) for item in data.get("destructibles") or []],
+            xp_piles=[_pile(item) for item in data.get("xp_piles") or []],
+            enemy_catalog=[_stats(item) for item in data.get("enemy_catalog") or []],
+            enemy_sectors=[_sector(item) for item in data.get("enemy_sectors") or []],
+            card_screen=_card_screen(data.get("card_screen")),
+            evolutions=[_evolution(item) for item in data.get("evolutions") or []],
             counts=Counts(
                 enemies_stage=int(counts.get("enemies_stage") or 0),
                 enemies_published=int(counts.get("enemies_published") or 0),
@@ -215,13 +296,21 @@ def _player(player: dict[str, Any]) -> PlayerState:
         for item in weapons_raw:
             if not isinstance(item, dict):
                 continue
+            amount_raw = item.get("amount")
             weapons.append(
                 WeaponState(
                     type=str(item.get("type") or ""),
                     level=int(item.get("level") or 0),
                     evo=bool(item.get("evo")),
+                    area=_opt_float(item, "area"),
+                    amount=int(amount_raw) if isinstance(amount_raw, (int, float)) and not isinstance(amount_raw, bool) else None,
                 )
             )
+    passives: list[PassiveState] = []
+    for item in player.get("passives") or []:
+        if not isinstance(item, dict):
+            continue
+        passives.append(PassiveState(type=str(item.get("type") or ""), level=int(item.get("level") or 0)))
     facing_raw = player.get("facing_x") or 0
     try:
         facing = int(round(float(facing_raw)))
@@ -243,6 +332,7 @@ def _player(player: dict[str, Any]) -> PlayerState:
         blocked=blocked,
         has_blocked=has_blocked,
         weapons=weapons,
+        passives=passives,
     )
 
 
@@ -261,11 +351,16 @@ def _floats(raw: Any, length: int) -> list[float]:
 def _entity(item: Any, velocity: bool) -> Entity:
     if not isinstance(item, dict):
         return Entity()
+    uid = item.get("id")
     return Entity(
         x=float(item.get("x") or 0.0),
         y=float(item.get("y") or 0.0),
         vx=float(item.get("vx") or 0.0) if velocity else 0.0,
         vy=float(item.get("vy") or 0.0) if velocity else 0.0,
+        type=str(item.get("type") or ""),
+        hp=_opt_float(item, "hp"),
+        hp_max=_opt_float(item, "hp_max"),
+        uid=str(uid) if uid is not None else "",
     )
 
 
@@ -277,3 +372,84 @@ def _typed(item: Any) -> TypedPin:
         x=float(item.get("x") or 0.0),
         y=float(item.get("y") or 0.0),
     )
+
+
+def _opt_float(item: dict[str, Any], key: str) -> Optional[float]:
+    if key not in item or item[key] is None:
+        return None
+    try:
+        return float(item[key])
+    except (TypeError, ValueError):
+        return None
+
+
+def _pile(item: Any) -> XpPile:
+    if not isinstance(item, dict):
+        return XpPile()
+    return XpPile(x=float(item.get("x") or 0.0), y=float(item.get("y") or 0.0), value=float(item.get("value") or 0.0))
+
+
+def _stats(item: Any) -> EnemyStats:
+    if not isinstance(item, dict):
+        return EnemyStats()
+    return EnemyStats(
+        type=str(item.get("type") or ""),
+        hp_max=float(item.get("hp_max") or 0.0),
+        speed=float(item.get("speed") or 0.0),
+    )
+
+
+def _sector(item: Any) -> SectorCount:
+    if not isinstance(item, dict):
+        return SectorCount()
+    return SectorCount(
+        sector=int(item.get("sector") or 0),
+        type=str(item.get("type") or ""),
+        count=int(item.get("count") or 0),
+    )
+
+
+def _evolution(item: Any) -> EvolutionPair:
+    if not isinstance(item, dict):
+        return EvolutionPair()
+    return EvolutionPair(
+        weapon=str(item.get("weapon") or ""),
+        passive=str(item.get("passive") or ""),
+        result=str(item.get("result") or ""),
+    )
+
+
+def _card_screen(raw: Any) -> Optional[CardScreen]:
+    if not isinstance(raw, dict):
+        return None
+    offers: list[CardOffer] = []
+    for item in raw.get("offers") or []:
+        if not isinstance(item, dict):
+            continue
+        offers.append(
+            CardOffer(
+                index=int(item.get("index") or 0),
+                name=str(item.get("name") or ""),
+                kind=str(item.get("kind") or ""),
+                type=str(item.get("type") or ""),
+                level=int(item.get("level") or 0),
+                is_new=bool(item.get("is_new")),
+                description=str(item.get("description") or ""),
+            )
+        )
+    return CardScreen(
+        kind=str(raw.get("kind") or ""),
+        offers=offers,
+        rerolls=_opt_int(raw, "rerolls"),
+        skips=_opt_int(raw, "skips"),
+        banishes=_opt_int(raw, "banishes"),
+    )
+
+
+def _opt_int(item: dict[str, Any], key: str) -> Optional[int]:
+    if key not in item or item[key] is None:
+        return None
+    try:
+        return int(item[key])
+    except (TypeError, ValueError):
+        return None

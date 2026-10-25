@@ -1,0 +1,640 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:vampire-survivors-jev:game-state:v5",
+  "title": "Vampire Survivors Jev game state v5",
+  "description": "Additive over v4. New fields are optional: gem piles in world space, enemy type and HP on published bodies, a per-sector type count, the stage enemy table, weapon area, passives, evolution pairs, and the in-run card screen. A v4-shaped payload with schema_version 5 and none of these fields is still valid. Names inside card offers and evolution pairs are whatever the game published. The example file uses placeholders.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "seq",
+    "t_ms",
+    "source",
+    "run",
+    "polar",
+    "enemies",
+    "bosses",
+    "chests",
+    "counts",
+    "perf"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 5
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "t_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "const": "bepinex"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "running",
+        "paused",
+        "level_up",
+        "survived_seconds"
+      ],
+      "properties": {
+        "running": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "level_up": {
+          "type": "boolean"
+        },
+        "survived_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "player": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "hp",
+        "hp_max"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "hp": {
+          "type": "number"
+        },
+        "hp_max": {
+          "type": "number"
+        },
+        "speed": {
+          "type": "number"
+        },
+        "radius": {
+          "type": "number"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "CharacterController.Level"
+        },
+        "xp": {
+          "type": "number",
+          "minimum": 0,
+          "description": "CharacterController.Xp (progress inside the current level)"
+        },
+        "xp_next": {
+          "type": "number",
+          "minimum": 0,
+          "description": "GameManager.LevelUpFactory.XpRequiredToLevelUp; 0 when unknown"
+        },
+        "magnet": {
+          "type": "number",
+          "minimum": 0,
+          "description": "CharacterController.Magnet.Radius in world units; 0 when unknown"
+        },
+        "facing_x": {
+          "type": "number",
+          "description": "-1 faces west, +1 faces east, 0 unknown (CharacterController.LastFacingDirection / IsFlipped)"
+        },
+        "move_dir": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number"
+          },
+          "description": "CharacterController.LastMovementDirection"
+        },
+        "blocked": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "description": "Raw Phaser body blocked flags this frame (player.body._blocked). Side naming is Phaser's; the bridge calibrates the Y sense."
+        },
+        "weapons": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "level"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "VampireSurvivors.Data.WeaponType enum name, e.g. WHIP"
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "evo": {
+                "type": "boolean"
+              },
+              "area": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Live area or reach if Equipment exposes it. Absent until that read is confirmed."
+              },
+              "amount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "passives": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "level"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        }
+      }
+    },
+    "polar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rings",
+        "sectors",
+        "radii",
+        "enemy",
+        "xp"
+      ],
+      "properties": {
+        "rings": {
+          "const": 3
+        },
+        "sectors": {
+          "const": 8
+        },
+        "radii": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "enemy": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "xp": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "wall": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "description": "Fraction of probe points per cell that hit a collision tile (PhaserTilemap.IsTileAtPosition). Absent when the stage has no tileset or the probe is disabled."
+        }
+      }
+    },
+    "enemies": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y"
+        ],
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "vx": {
+            "type": "number"
+          },
+          "vy": {
+            "type": "number"
+          },
+          "type": {
+            "type": "string",
+            "description": "EnemyType enum name. Absent until the read is confirmed."
+          },
+          "hp": {
+            "type": "number",
+            "minimum": 0
+          },
+          "hp_max": {
+            "type": "number",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "bosses": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/xy"
+      }
+    },
+    "chests": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/xy"
+      }
+    },
+    "pickups": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Non-gem floor items (ROAST = chicken, COIN*, VACUUM, ROSARY, ...). Gems stay in polar.xp; chests stay in chests[].",
+      "items": {
+        "$ref": "#/$defs/typed"
+      }
+    },
+    "destructibles": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Nearby breakable props (BRAZIER, CANDLE, LAMPOST, ...). Chance of chicken / gold / power-up.",
+      "items": {
+        "$ref": "#/$defs/typed"
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enemies_stage",
+        "enemies_published",
+        "gems_stage",
+        "gems_published",
+        "chests_stage",
+        "chests_published",
+        "bosses_published"
+      ],
+      "properties": {
+        "enemies_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "enemies_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gems_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gems_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chests_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chests_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bosses_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tilemaps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Collision tilemaps probed for polar.wall this snapshot; 0 when the wall channel is not live."
+        },
+        "pickups_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pickups_published": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "destructibles_stage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "destructibles_published": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "perf": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "probe_us"
+      ],
+      "properties": {
+        "probe_us": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "xp_piles": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Gem clusters in world space, from the same gem read as polar.xp.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y",
+          "value"
+        ],
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "enemy_catalog": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Stage enemy table: max HP and speed. Not a damage formula.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "hp_max",
+          "speed"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "hp_max": {
+            "type": "number",
+            "minimum": 0
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "enemy_sectors": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Count of one enemy type in one compass sector. Sector 0 is north.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sector",
+          "type",
+          "count"
+        ],
+        "properties": {
+          "sector": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "type": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "card_screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "level_up",
+            "chest",
+            "arcana"
+          ]
+        },
+        "offers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "index",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "weapon",
+                  "passive",
+                  "arcana"
+                ]
+              },
+              "type": {
+                "type": "string"
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "is_new": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "rerolls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skips": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "banishes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "evolutions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "weapon",
+          "passive",
+          "result"
+        ],
+        "properties": {
+          "weapon": {
+            "type": "string"
+          },
+          "passive": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "xy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "typed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "ItemType or PropType enum name from this install"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

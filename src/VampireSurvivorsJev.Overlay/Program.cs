@@ -75,6 +75,15 @@ internal sealed class OverlayForm : Form
     private float _camR2Px;
     private string _why = "";
     private string _gst = "";
+    private string _controller = "";
+    private string _decider = "";
+    private string _confidence = "";
+    private string _latency = "";
+    private string _fallback = "";
+    private string _card = "";
+    private string _picked = "";
+    private int _mark = -1;
+    private readonly string[] _opts = new string[8];
 
     public OverlayForm()
     {
@@ -83,7 +92,7 @@ internal sealed class OverlayForm : Form
         ShowInTaskbar = true;
         StartPosition = FormStartPosition.Manual;
         Location = new Point(16, 16);
-        ClientSize = new Size(360, 268);
+        ClientSize = new Size(392, 448);
         FormBorderStyle = FormBorderStyle.None;
         BackColor = Color.FromArgb(18, 16, 22);
         DoubleBuffered = true;
@@ -199,26 +208,21 @@ internal sealed class OverlayForm : Form
             _polarRadii,
             _state != "waiting",
             _hasWall && _state != "waiting" ? _polarWall : null,
-            _state != "waiting" ? _blocked : "");
+            _state != "waiting" ? _blocked : "",
+            _mark);
 
         var loopText = !_loopLive ? "LOOP OFF" : _armed ? "ARMED" : "LOOP ON";
-        if (_loopLive && _armed && !string.IsNullOrEmpty(_mode))
+        if (_loopLive && _armed && string.IsNullOrEmpty(_decider) && !string.IsNullOrEmpty(_mode))
         {
             loopText += "  ·  " + _mode;
         }
 
-        var loopHint = LoopHint();
-        g.DrawString(loopText, _statusFont, !_loopLive ? mutedBrush : numberBrush, 16, 156);
-        g.DrawString(loopHint, _labelFont, mutedBrush, 16, 172);
-        var detail = _state != "waiting" && !string.IsNullOrEmpty(_weapons) ? ShortWeapons(_weapons) : _gst;
-        if (!string.IsNullOrEmpty(detail) && _state != "waiting")
-        {
-            g.DrawString(detail, _labelFont, mutedBrush, 16, 188);
-        }
-        DrawKeys(g, 16, 206);
+        DrawMind(g, mutedBrush, numberBrush, loopText);
+        DrawKeys(g, 16, 332);
+        g.DrawString(LoopHint(), _labelFont, mutedBrush, 112, 340);
         if (!string.IsNullOrEmpty(_blocked) && _loopLive)
         {
-            g.DrawString("wall " + _blocked, _labelFont, mutedBrush, 104, 232);
+            g.DrawString("wall " + _blocked, _labelFont, mutedBrush, 112, 404);
         }
     }
 
@@ -261,6 +265,95 @@ internal sealed class OverlayForm : Form
         }
 
         return _focused ? _heading : "click the game";
+    }
+
+    private void DrawMind(Graphics g, Brush muted, Brush number, string loopText)
+    {
+        using var line = new Pen(Color.FromArgb(42, 236, 208, 156), 1f);
+        g.DrawLine(line, 16, 160, Width - 18, 160);
+        g.DrawString(loopText, _statusFont, _loopLive ? number : muted, 16, 168);
+
+        var who = string.IsNullOrEmpty(_decider) ? "" : _decider;
+        if (!string.IsNullOrEmpty(who))
+        {
+            var pill = who.ToUpperInvariant();
+            var size = g.MeasureString(pill, _statusFont);
+            var rect = new RectangleF(Width - size.Width - 28, 166, size.Width + 12, 18);
+            using var bg = new SolidBrush(DeciderColor(who));
+            using var path = RoundedRect(Rectangle.Round(rect), 8);
+            g.FillPath(bg, path);
+            g.DrawString(pill, _statusFont, number, rect.X + 6, 167);
+        }
+
+        var meta = _controller;
+        if (!string.IsNullOrEmpty(_confidence))
+        {
+            meta += (meta.Length > 0 ? "    " : "") + "p " + _confidence;
+        }
+
+        if (!string.IsNullOrEmpty(_latency))
+        {
+            meta += "    " + _latency + " ms";
+        }
+
+        if (!string.IsNullOrEmpty(_fallback))
+        {
+            meta += "    fb " + _fallback;
+        }
+
+        if (meta.Length > 0)
+        {
+            g.DrawString(meta, _labelFont, muted, 16, 190);
+        }
+
+        var y = 212;
+        var shown = 0;
+        using var pickBrush = new SolidBrush(Color.FromArgb(236, 208, 156));
+        for (var i = 0; i < _opts.Length && shown < 4; i++)
+        {
+            var row = _opts[i];
+            if (string.IsNullOrEmpty(row))
+            {
+                continue;
+            }
+
+            var split = row.IndexOf('|');
+            var id = split > 0 ? row.Substring(0, split) : row;
+            var facts = split > 0 ? row.Substring(split + 1) : row;
+            var picked = id.Length > 0 && id == _picked;
+            if (picked)
+            {
+                g.FillRectangle(pickBrush, 16, y + 3, 3, 11);
+            }
+
+            var text = facts.Length > 58 ? facts.Substring(0, 57) + "..." : facts;
+            g.DrawString(text, _labelFont, picked ? number : muted, 24, y);
+            y += 17;
+            shown++;
+        }
+
+        if (!string.IsNullOrEmpty(_card))
+        {
+            var card = _card.Length > 58 ? _card.Substring(0, 57) + "..." : _card;
+            g.DrawString(card, _labelFont, number, 16, 284);
+        }
+
+        var detail = _state != "waiting" && !string.IsNullOrEmpty(_weapons) ? ShortWeapons(_weapons) : _gst;
+        if (!string.IsNullOrEmpty(detail) && _state != "waiting")
+        {
+            g.DrawString(detail, _labelFont, muted, 16, 306);
+        }
+    }
+
+    private static Color DeciderColor(string who)
+    {
+        return who.ToLowerInvariant() switch
+        {
+            "jev" => Color.FromArgb(90, 176, 140, 72),
+            "reflex" => Color.FromArgb(110, 196, 74, 74),
+            "code" => Color.FromArgb(70, 120, 110, 100),
+            _ => Color.FromArgb(50, 148, 138, 150)
+        };
     }
 
     private void DrawKeys(Graphics g, int x, int y)
@@ -344,7 +437,8 @@ internal sealed class OverlayForm : Form
             _camR2Px,
             _polarWall,
             _hasWall,
-            _loopLive ? _blocked : "");
+            _loopLive ? _blocked : "",
+            _mark);
         Invalidate();
     }
 
@@ -502,17 +596,19 @@ internal sealed class OverlayForm : Form
             {
                 _armed = false;
                 _keys = "";
-                _heading = "—";
+                _heading = "-";
                 _loopLive = false;
                 _focused = false;
                 _why = "";
                 _mode = "";
                 _blocked = "";
+                ClearMind();
                 return;
             }
 
             var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(Program.InputPath);
             _loopLive = age.TotalSeconds < 2.5;
+            ClearMind();
             foreach (var raw in File.ReadAllLines(Program.InputPath))
             {
                 var line = raw.Trim();
@@ -552,6 +648,48 @@ internal sealed class OverlayForm : Form
                 {
                     _blocked = value.ToUpperInvariant();
                 }
+                else if (key == "controller")
+                {
+                    _controller = value;
+                }
+                else if (key == "decider")
+                {
+                    _decider = value;
+                }
+                else if (key == "confidence")
+                {
+                    _confidence = value;
+                }
+                else if (key == "latency_ms")
+                {
+                    _latency = value;
+                }
+                else if (key == "fallback")
+                {
+                    _fallback = value;
+                }
+                else if (key == "card")
+                {
+                    _card = value;
+                }
+                else if (key == "option")
+                {
+                    _picked = value;
+                }
+                else if (key == "mark")
+                {
+                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _mark))
+                    {
+                        _mark = -1;
+                    }
+                }
+                else if (key.Length == 4 && key.StartsWith("opt", StringComparison.Ordinal))
+                {
+                    if (int.TryParse(key.Substring(3), NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot) && slot >= 0 && slot < _opts.Length)
+                    {
+                        _opts[slot] = value;
+                    }
+                }
             }
 
             if (!_loopLive)
@@ -560,11 +698,25 @@ internal sealed class OverlayForm : Form
                 _keys = "";
                 _mode = "";
                 _blocked = "";
+                ClearMind();
             }
         }
         catch
         {
         }
+    }
+
+    private void ClearMind()
+    {
+        _controller = "";
+        _decider = "";
+        _confidence = "";
+        _latency = "";
+        _fallback = "";
+        _card = "";
+        _picked = "";
+        _mark = -1;
+        Array.Clear(_opts, 0, _opts.Length);
     }
 
     private static void ParseFloats(string csv, float[] dest)

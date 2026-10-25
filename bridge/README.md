@@ -1,6 +1,6 @@
 # Telemetry bridge
 
-The bridge runs **outside** the game process. The BepInEx plugin publishes `contracts/game-state.v4.schema.json` snapshots to UDP `127.0.0.1:27182` (v3 producers still parse — every v4 field is optional). This package consumes them.
+The bridge runs **outside** the game process. The BepInEx plugin publishes snapshots to UDP `127.0.0.1:27182`. Live snapshots are schema v5. v3 and v4 producers still parse, because every newer field is optional. The diagram below is the `baseline` controller. `code` and `jev` replace the pilot and the policy with the navigator described after it.
 
 ```text
 plugin JSON datagram (polar 3x8 enemy/xp/wall + pins + player progress/weapons/blocked)
@@ -16,7 +16,30 @@ vampirejev.gate       armed + VampireSurvivors.exe focused + run playable
 vampirejev.wasd       8-way SendInput, all-up helper
 ```
 
-Jev, API keys, retries, and TypeSafe clients belong here later — never in the in-game DLL. Jev should set goals/weights (a *mode*), not WASD.
+Jev is called only from this package, and only when you pass `--controller jev` or `--cards jev`. The key is `TYPESAFE_API_KEY`. If it is missing, those modes keep playing on the code fallback and say so once.
+
+```powershell
+cd C:\Users\ydste\vampire-survivors-jev\bridge
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
+python -m vampirejev                         # baseline, today's pilot
+python -m vampirejev --controller code       # new motor, no Jev
+python -m vampirejev --controller jev        # Jev picks, code fills in
+python -m vampirejev.summary path\to\run.jsonl
+python -m vampirejev.probe                   # latency check; needs the API key
+```
+
+A run log is written under `recordings/runs/` (gitignored) once a run is underway. It records who decided, Jev's answers, card picks, disarms, and the outcome.
+
+## How the navigator thinks
+
+Every snapshot, code builds a few options. Each one is a target (a gem pile, a pickup, a chest, a brazier, an enemy group, or open space), a stance (how to approach it), and a sentence. The id comes from the target's world cell, so a late answer still points at the same thing.
+
+`--controller code` scores those sentences' buckets: value, danger on the way, distance. It keeps the current option unless another is clearly better.
+
+`--controller jev` sends the sentences to Jev a few times a second, on a background thread, and does not wait. The answer is used only when it is under a second old, the option is still there, and the confidence is at least 0.55. Otherwise the code pick stands. One motor presses the keys, dodges anything that would hurt in the next fraction of a second, and will walk through enemies that die fast when the stance asked for that.
+
+Jev never sees coordinates or the occupancy grid. The model id is `jev-1.13.0` until the probe says otherwise.
 
 ## Run
 
@@ -30,7 +53,7 @@ python -m vampirejev --mode kite    # lock one mode for an A/B run
 - Default **SAFE**. **Tap Ctrl** to arm (toggle). `--hold-ctrl` restores hold-to-arm.
 - The panel shows **LOOP OFF** until this process is running. Launching the game alone never steers. In Cursor, run `.\run-loop.bat` from the repo root — `.ps1` often opens as text.
 - `VSJEV_NUDGE=N` / `S` / `E` / `W` (and diagonals) still forces a heading for A/B tests.
-- If you press WASD yourself, the loop disarms and releases keys.
+- If you press WASD yourself during play, the loop disarms and releases keys. WASD on a level-up screen does not disarm, so you can pick a card by hand.
 - Pause, level-up, menu, or alt-tab: all keys up within one loop tick.
 - Overlay and plugin keep working if this process is not running (UDP is fire-and-forget).
 

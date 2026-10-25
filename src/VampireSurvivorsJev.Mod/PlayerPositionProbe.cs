@@ -36,6 +36,13 @@ internal struct TypedSlot
     public float Dist2;
 }
 
+internal struct PileSlot
+{
+    public float X;
+    public float Y;
+    public float Value;
+}
+
 /// <summary>
 /// Reused snapshot buffers. Polar bins and pin lists are zeroed each emit.
 /// </summary>
@@ -47,6 +54,7 @@ internal sealed class GameSnapshot
     public const int MaxWeapons = 12;
     public const int MaxPickups = 8;
     public const int MaxDestructibles = 8;
+    public const int MaxXpPiles = 8;
 
     public long Seq;
     public long TMs;
@@ -111,6 +119,8 @@ internal sealed class GameSnapshot
     public readonly WeaponSlot[] Weapons = new WeaponSlot[MaxWeapons];
     public readonly TypedSlot[] Pickups = new TypedSlot[MaxPickups];
     public readonly TypedSlot[] Destructibles = new TypedSlot[MaxDestructibles];
+    public int XpPileCount;
+    public readonly PileSlot[] XpPiles = new PileSlot[MaxXpPiles];
     public readonly float[] PolarWall = new float[PolarGrid.Cells];
 
     public readonly EntitySlot[] Enemies = new EntitySlot[MaxEnemies];
@@ -144,6 +154,7 @@ internal sealed class GameSnapshot
         PickupPublished = 0;
         DestructibleStage = 0;
         DestructiblePublished = 0;
+        XpPileCount = 0;
         Array.Clear(PolarWall, 0, PolarWall.Length);
         EnemyStage = 0;
         EnemyPublished = 0;
@@ -199,6 +210,10 @@ internal sealed class GameSnapshot
 /// - Pickup.PickupType (ItemType: ROAST = floor chicken, COIN*, VACUUM, ROSARY, OROLOGION, ...)
 /// - GameManager.Destructibles (PhysicsGroup : Group) -> children (HashSet PhaserGameObject);
 ///   Destructible : BasePoolableSpriteBehaviour : ArcadeSprite (position), IsUnitDead(), DestructibleType (PropType)
+/// v5 (2026-10-24): xp_piles are clusters of the same GameManager.Gems / Pickup.position / Pickup.Value
+/// read that already fills polar.xp. No new game type. Enemy type, HP, card offers, and weapon area
+/// are still absent: those member names show up in the interop strings, but the owning type was not
+/// confirmed, so this probe does not call them.
 /// Inactive Unity objects are skipped via gameObject.activeInHierarchy.
 /// </summary>
 internal static class PlayerPositionProbe
@@ -218,6 +233,7 @@ internal static class PlayerPositionProbe
     private static bool _progressProbeBroken;
     private static bool _blockedProbeBroken;
     private static bool _destructibleProbeBroken;
+    private static bool _xpPileBroken;
 
     public static void Fill(GameManager gameManager, GameSnapshot snapshot)
     {
@@ -1130,12 +1146,87 @@ internal static class PlayerPositionProbe
                 var cell = PolarGrid.CellIndex(x - playerPos.x, y - playerPos.y, r0, r1, r2);
                 snapshot.PolarXp[cell] += value;
                 binned++;
+                NoteXpPile(snapshot, playerPos, x, y, value, r2);
             }
 
             snapshot.GemPublished = binned;
         }
         catch
         {
+        }
+    }
+
+    /// <summary>
+    /// Fold nearby gems into a few world-space piles. The option id is a cell of that pile,
+    /// so it stays put while the player walks. A failure here disables only the piles.
+    /// </summary>
+    private static void NoteXpPile(GameSnapshot snapshot, Vector2 playerPos, float x, float y, float value, float r2)
+    {
+        if (_xpPileBroken)
+        {
+            return;
+        }
+
+        try
+        {
+            var dx = x - playerPos.x;
+            var dy = y - playerPos.y;
+            var reach = r2 * 1.2f;
+            if (dx * dx + dy * dy > reach * reach)
+            {
+                return;
+            }
+
+            const float join = 2.5f;
+            var n = snapshot.XpPileCount;
+            for (var i = 0; i < n; i++)
+            {
+                var px = snapshot.XpPiles[i].X - x;
+                var py = snapshot.XpPiles[i].Y - y;
+                if (px * px + py * py > join * join)
+                {
+                    continue;
+                }
+
+                var old = snapshot.XpPiles[i].Value;
+                var total = old + value;
+                var pile = snapshot.XpPiles[i];
+                if (total > 0.001f)
+                {
+                    pile.X = (pile.X * old + x * value) / total;
+                    pile.Y = (pile.Y * old + y * value) / total;
+                }
+
+                pile.Value = total;
+                snapshot.XpPiles[i] = pile;
+                return;
+            }
+
+            if (n < GameSnapshot.MaxXpPiles)
+            {
+                snapshot.XpPiles[n] = new PileSlot { X = x, Y = y, Value = value };
+                snapshot.XpPileCount = n + 1;
+                return;
+            }
+
+            var smallest = 0;
+            for (var i = 1; i < n; i++)
+            {
+                if (snapshot.XpPiles[i].Value < snapshot.XpPiles[smallest].Value)
+                {
+                    smallest = i;
+                }
+            }
+
+            if (value > snapshot.XpPiles[smallest].Value)
+            {
+                snapshot.XpPiles[smallest] = new PileSlot { X = x, Y = y, Value = value };
+            }
+        }
+        catch
+        {
+            _xpPileBroken = true;
+            snapshot.XpPileCount = 0;
         }
     }
 
@@ -1351,7 +1442,7 @@ internal static class SnapshotJson
     {
         var inv = CultureInfo.InvariantCulture;
         sb.Clear();
-        sb.Append("{\"schema_version\":4,\"seq\":");
+        sb.Append("{\"schema_version\":5,\"seq\":");
         sb.Append(snapshot.Seq.ToString(inv));
         sb.Append(",\"t_ms\":");
         sb.Append(snapshot.TMs.ToString(inv));
@@ -1477,6 +1568,27 @@ internal static class SnapshotJson
         WriteTyped(sb, snapshot.Pickups, snapshot.PickupPublished);
         sb.Append("],\"destructibles\":[");
         WriteTyped(sb, snapshot.Destructibles, snapshot.DestructiblePublished);
+        if (snapshot.XpPileCount > 0)
+        {
+            sb.Append("],\"xp_piles\":[");
+            for (var i = 0; i < snapshot.XpPileCount; i++)
+            {
+                if (i > 0)
+                {
+                    sb.Append(',');
+                }
+
+                var pile = snapshot.XpPiles[i];
+                sb.Append("{\"x\":");
+                AppendFloat(sb, pile.X);
+                sb.Append(",\"y\":");
+                AppendFloat(sb, pile.Y);
+                sb.Append(",\"value\":");
+                AppendFloat(sb, Math.Max(0f, pile.Value));
+                sb.Append('}');
+            }
+        }
+
         sb.Append("],\"counts\":{\"enemies_stage\":");
         sb.Append(snapshot.EnemyStage.ToString(inv));
         sb.Append(",\"enemies_published\":");

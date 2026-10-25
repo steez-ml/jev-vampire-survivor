@@ -2,7 +2,7 @@
 
 This repository is a beginner-friendly path toward an AI agent that can play Steam Vampire Survivors. The owner is a data engineer new to C#, Unity, and IL2CPP.
 
-**Current phase: v1 polar pilot.** The in-game DLL is still read-only. It publishes a 3×8 occupancy grid (enemies, XP, and now **walls**), inner-ring enemies with velocity, bosses, chests, and the player's level/XP/magnet/facing/equipped weapons/collision flags. A Python pilot scores eight WASD headings with *priced* contact (walk through one bat for a pile early; do not late), an openness/kiting term so it stops running into corridor walls, a stuck detector plus wall memory, and a small weapon-aim term (whip faces, knife walks). You still pick upgrades. Jev is not in this phase.
+**Current phase: navigator.** The in-game DLL is still read-only. It publishes a 3×8 occupancy grid (enemies, XP, and walls), inner-ring enemies, bosses, chests, the player's level, weapons, and collision flags, and now gem piles in world space (snapshot v5). The Python bridge can run three controllers: `baseline` (today's pilot), `code` (options, a plain picker, and one motor), and `jev` (the same motor, with Jev choosing the option when the answer is fresh and confident). You still start the run yourself. Card picks can be suggested, and pressed only if you opt in. See `docs/CHARTER.md` and `docs/ROADMAP.md`.
 
 ## Observed install (this machine)
 
@@ -47,10 +47,10 @@ The plugin stays inside the game process and does not call Jev, hold API keys, o
 | `src/VampireSurvivorsJev.Mod` | BepInEx plugin: harvest + UDP + overlay file | More evidenced fields |
 | `src/VampireSurvivorsJev.Overlay` | Compact HUD process (panel + on-game field HUD with wall cells) | Same |
 | `contracts/game-state.v4.schema.json` | Live snapshot: polar 3×8 enemy/xp/wall + pins + player progress (`source: bepinex`) | Shared with Jev |
-| `bridge/vampirejev` | Receiver, pilot (memory), policy (scoring), WASD, gates, sim, replay | Jev picks the mode |
-| `jev` | Design notes only | TypeSafe calls from the bridge |
+| `bridge/vampirejev` | Receiver, gates, WASD, baseline pilot, and the navigator (perception, options, motor, Jev) | Same |
+| `contracts/game-state.v5.schema.json` | Additive snapshot: gem piles, and room for enemy types, cards, evolutions | Live reads fill the fields as they are confirmed |
 
-`contracts/game-state.v1.schema.json` and `v2` are leftovers (MelonLoader attempt, then k-nearest gems). `v3` is what the plugin sent before walls/weapons; **v4** is additive (every new field optional) and is the control plane now.
+`contracts/game-state.v1.schema.json` and `v2` are leftovers. `v3` is the pre-wall snapshot. **v4** added walls, weapons, and progress. **v5** is what the plugin sends now: the same fields, plus optional gem piles. Older recordings still parse. Enemy types and card offers are in the v5 schema and are not read from the game yet.
 
 ## Setup on Windows
 
@@ -90,7 +90,16 @@ The overlay exe is `artifacts\Debug\net6.0-windows\VampireSurvivorsJev.Overlay.e
 
 ### 4. Python loop (required for steering)
 
-No extra packages. Cursor often opens `.ps1` as a text file, so use the `.bat`:
+No extra packages for `baseline` or `code`. Jev needs the TypeSafe SDK, and the key stays in the environment, never in the repo:
+
+```powershell
+cd .\bridge
+python -m pip install -r requirements.txt
+# Then, in the shell you use to launch the loop:
+# $env:TYPESAFE_API_KEY = "..."
+```
+
+Cursor often opens `.ps1` as a text file, so use the `.bat`:
 
 ```powershell
 .\run-loop.bat
@@ -104,7 +113,7 @@ python -m unittest discover -s tests -v
 python -m vampirejev
 ```
 
-Keep that terminal open. The panel should switch from **LOOP OFF** to **LOOP ON**. Click the Vampire Survivors window, then **tap Ctrl once** to arm (tap again to disarm). Default is SAFE. While armed the panel shows the pilot **mode** (`FARM` / `KITE` / `FLEE` / `CHEST`) next to ARMED and `wall N` when the stuck detector sees a wall; the field HUD tints wall cells grey and marks blocked sides in red. `VSJEV_NUDGE=N` still forces north, and `.\run-loop.bat --mode kite` locks one mode for A/B runs. Pressing WASD yourself disarms and releases keys. Pause, level-up, alt-tab, or a menu snapshot also releases keys. `bridge/README.md` explains each scoring term.
+Keep that terminal open. The panel should switch from **LOOP OFF** to **LOOP ON**. Click the Vampire Survivors window, then **tap Ctrl once** to arm (tap again to disarm). Default controller is `baseline` (the old pilot). `--controller code` uses the new motor with the plain picker. `--controller jev` asks Jev, and falls back to that picker when the key is missing, the answer is late, or the confidence is low. `--cards rules` or `--cards jev` chooses level-up cards. Those keys are not sent unless you also pass `--menu-keys provisional`, because the keys for this game version are not confirmed yet. Pressing WASD yourself during play disarms and releases keys. Doing that on a level-up screen does not. Pause, alt-tab, or a menu snapshot also releases movement keys. `bridge/README.md` explains the pilot and the navigator.
 
 **The bot does not start with Steam.** Two processes:
 
@@ -148,7 +157,7 @@ If any v4 read crashes the game (not just logs), set the matching `Telemetry.Pro
 - No Jev calls from the in-game DLL.
 - No Rewired injection and no writing `CurrentPos`.
 - Do not invent Vampire Survivors class names. Inspect `BepInEx\interop` first (the evidence list lives in the `PlayerPositionProbe` doc comment).
-- Policy is a small 8-way potential field with memory. No Jev, no Rewired, no writing `CurrentPos`.
+- Policy for `baseline` is still the 8-way field. `code` and `jev` pick among options. The motor presses WASD. No Rewired, no writing `CurrentPos`.
 
 ## References
 
